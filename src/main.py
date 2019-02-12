@@ -308,6 +308,10 @@ def main(selectedDataset = "digits"):
 	out_cc_list = []
 	in_pca_list = []
 	out_pca_list = []
+	train_in_cc_list = []
+	train_out_cc_list = []
+	train_in_pca_list = []
+	train_out_pca_list = []
 	for trainval_index, test_index in skf.split(X, y) :
 	
 		X_trainval, y_trainval = X[trainval_index], y[trainval_index]
@@ -329,6 +333,9 @@ def main(selectedDataset = "digits"):
 		test_out_cc, in_acc_cc, out_acc_cc = convex_combination_test(model, X_trainval, X_test, y_test)
 		test_out_pca, in_acc_pca, out_acc_pca, lims = pca_test(model, X_trainval, X_test, y_test)
 		
+		train_out_cc, train_in_acc_cc, train_out_acc_cc = convex_combination_test(model, X_trainval, X_trainval, y_trainval)
+		train_out_pca, train_in_acc_pca, train_out_acc_pca, lims = pca_test(model, X_trainval, X_trainval, y_trainval)
+		
 		if in_acc_cc is not np.nan: in_acc_cc_list.append(in_acc_cc)
 		if out_acc_cc is not np.nan: out_acc_cc_list.append(out_acc_cc)
 		if in_acc_pca is not np.nan: in_acc_pca_list.append(in_acc_pca)
@@ -338,6 +345,11 @@ def main(selectedDataset = "digits"):
 		out_cc_list.append(sum(test_out_cc==True)/test_size)
 		in_pca_list.append(sum(test_out_pca==False)/test_size)
 		out_pca_list.append(sum(test_out_pca==True)/test_size)
+		
+		train_in_cc_list.append( sum(train_out_cc==False)/len(y_trainval) )
+		train_out_cc_list.append( sum(train_out_cc==True)/len(y_trainval) )
+		train_in_pca_list.append( sum(train_out_pca==False)/len(y_trainval) )
+		train_out_pca_list.append( sum(train_out_pca==True)/len(y_trainval) )
 	
 		pred = model.predict(X_test)
 		errs = y_test != pred
@@ -432,7 +444,7 @@ def main(selectedDataset = "digits"):
 			ax.set_title('CC: in-acc (%d) = %.4f - out-acc (%d) = %.4f' \
 				   %(sum(test_out_cc==False), in_acc_cc, sum(test_out_cc==True), out_acc_cc))
 			plt.tight_layout()
-			plt.savefig(os.path.join(folder_name, '%s_closed_db_cc_split_%2d.png' %(dbname, split_index)))
+			plt.savefig(os.path.join(folder_name, '%s_closed_db_cc_split_%02d.png' %(dbname, split_index)))
 			plt.draw()
 			
 			
@@ -449,18 +461,22 @@ def main(selectedDataset = "digits"):
 			ax.set_title('PCA: in-acc (%d) = %.4f - out-acc (%d) = %.4f' \
 						%(sum(test_out_pca==False), in_acc_pca, sum(test_out_pca==True), out_acc_pca))
 			plt.tight_layout()
-			plt.savefig(os.path.join(folder_name, '%s_closed_db_pcasplit_%02d.png' %(dbname, split_index)))
+			plt.savefig(os.path.join(folder_name, '%s_closed_db_pca_split_%02d.png' %(dbname, split_index)))
 			plt.draw()
 		
 		split_index = split_index + 1
 	
 	logger.info("Using convex combinations of training samples")
+	logger.info("\tFraction of train samples inside the convex polytope: %.4f (+- %.4f)" %( np.mean(train_in_cc_list), np.std(train_in_cc_list) / np.sqrt(n_splits) ))
+	logger.info("\tFraction of train samples outside the convex polytope: %.4f (+- %.4f)" %( np.mean(train_out_cc_list), np.std(train_out_cc_list) / np.sqrt(n_splits) ))
 	logger.info("\tFraction of test samples inside the convex polytope: %.4f (+- %.4f)" %( np.mean(in_cc_list), np.std(in_cc_list) / np.sqrt(n_splits) ))
 	logger.info("\tFraction of test samples outside the convex polytope: %.4f (+- %.4f)" %( np.mean(out_cc_list), np.std(out_cc_list) / np.sqrt(n_splits) ))
 	logger.info('\tInterpolation accuracy: %.4f (+- %.4f)'  %( np.mean(in_acc_cc_list), np.std(in_acc_cc_list) / np.sqrt(n_splits) ))
 	logger.info('\tExtrapolation accuracy: %.4f (+- %.4f)'  %( np.mean(out_acc_cc_list), np.std(out_acc_cc_list) / np.sqrt(n_splits) ))
 			
 	logger.info("Using PCA upper bound approximation")
+	logger.info("\tFraction of train samples inside the convex polytope: %.4f (+- %.4f)" %( np.mean(train_in_pca_list), np.std(train_in_pca_list) / np.sqrt(n_splits) ))
+	logger.info("\tFraction of train samples outside the convex polytope: %.4f (+- %.4f)" %( np.mean(train_out_pca_list), np.std(train_out_pca_list) / np.sqrt(n_splits) ))
 	logger.info("\tFraction of test samples inside the convex polytope: %.4f (+- %.4f)" %( np.mean(in_pca_list), np.std(in_pca_list) / np.sqrt(n_splits) ))
 	logger.info("\tFraction of test samples outside the convex polytope: %.4f (+- %.4f)" %( np.mean(out_pca_list), np.std(out_pca_list) / np.sqrt(n_splits) ))
 	logger.info('\tInterpolation accuracy: %.4f (+- %.4f)'  %( np.mean(in_acc_pca_list), np.std(in_acc_pca_list) / np.sqrt(n_splits) ))
@@ -479,7 +495,7 @@ if __name__ == "__main__" :
 #		["blobs"],
 #		["circles"],
 		["digits"],
-		["mnist"],
+#		["mnist"],
 		]
 	for dataset in dataList:
 		main(dataset[0])
