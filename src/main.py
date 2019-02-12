@@ -198,6 +198,7 @@ def main(selectedDataset = "digits"):
 	figsize = [5, 4]
 	seed = 42
 	selectedClassifiers = ["SVC"]
+	n_splits = 10
 
 	# a list of classifiers
 	allClassifiers = [
@@ -294,139 +295,176 @@ def main(selectedDataset = "digits"):
 
 	logger.info("Creating train/test split...")
 	from sklearn.model_selection import StratifiedKFold
-	skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
-	listOfSplits = [split for split in skf.split(X, y)]
-	trainval_index, test_index = listOfSplits[0]
-	X_trainval, y_trainval = X[trainval_index], y[trainval_index]
-	X_test, y_test = X[test_index], y[test_index]
-	logger.info("Training set: %d lines (%.2f%%); test set: %d lines (%.2f%%)" % (X_trainval.shape[0], (100.0 * float(X_trainval.shape[0]/X.shape[0])), X_test.shape[0], (100.0 * float(X_test.shape[0]/X.shape[0]))))
+	skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+#	listOfSplits = [split for split in skf.split(X, y)]
+#	trainval_index, test_index = listOfSplits[0]
 	
-	# rescale data
-	scaler = StandardScaler()
-	sc = scaler.fit(X_trainval)
-	X = sc.transform(X)
-	X_trainval = sc.transform(X_trainval)
-	X_test = sc.transform(X_test)
+	split_index = 1
+	in_acc_cc_list = []
+	out_acc_cc_list = []
+	in_acc_pca_list = []
+	out_acc_pca_list = []
+	in_cc_list = []
+	out_cc_list = []
+	in_pca_list = []
+	out_pca_list = []
+	for trainval_index, test_index in skf.split(X, y) :
 	
-	# train classifier
-	model = copy.deepcopy( SVC(random_state=seed) )
-	model.fit(X_trainval, y_trainval)
+		X_trainval, y_trainval = X[trainval_index], y[trainval_index]
+		X_test, y_test = X[test_index], y[test_index]
+	#	logger.info("Training set: %d lines (%.2f%%); test set: %d lines (%.2f%%)" % (X_trainval.shape[0], (100.0 * float(X_trainval.shape[0]/X.shape[0])), X_test.shape[0], (100.0 * float(X_test.shape[0]/X.shape[0]))))
+		logger.info("\tSplit %d" %(split_index))
+		
+		# rescale data
+		scaler = StandardScaler()
+		sc = scaler.fit(X_trainval)
+		X = sc.transform(X)
+		X_trainval = sc.transform(X_trainval)
+		X_test = sc.transform(X_test)
+		
+		# train classifier
+		model = copy.deepcopy( SVC(random_state=seed) )
+		model.fit(X_trainval, y_trainval)
+		
+		test_out_cc, in_acc_cc, out_acc_cc = convex_combination_test(model, X_trainval, X_test, y_test)
+		test_out_pca, in_acc_pca, out_acc_pca, lims = pca_test(model, X_trainval, X_test, y_test)
+		
+		if in_acc_cc is not np.nan: in_acc_cc_list.append(in_acc_cc)
+		if out_acc_cc is not np.nan: out_acc_cc_list.append(out_acc_cc)
+		if in_acc_pca is not np.nan: in_acc_pca_list.append(in_acc_pca)
+		if out_acc_pca is not np.nan: out_acc_pca_list.append(out_acc_pca)
+		test_size = len(y_test)
+		in_cc_list.append(sum(test_out_cc==False)/test_size)
+		out_cc_list.append(sum(test_out_cc==True)/test_size)
+		in_pca_list.append(sum(test_out_pca==False)/test_size)
+		out_pca_list.append(sum(test_out_pca==True)/test_size)
 	
-	test_out_cc, in_acc_cc, out_acc_cc = convex_combination_test(model, X_trainval, X_test, y_test)
-	test_out_pca, in_acc_pca, out_acc_pca, lims = pca_test(model, X_trainval, X_test, y_test)
-
-	pred = model.predict(X_test)
-	errs = y_test != pred
+		pred = model.predict(X_test)
+		errs = y_test != pred
+		
+		logger.info("\t\tUsing convex combinations of training samples")
+		logger.info('\t\t\tInterpolation accuracy (#samples: %d) = %.4f' %(sum(test_out_cc==False), in_acc_cc))
+		logger.info('\t\t\tExtrapolation accuracy (#samples: %d) = %.4f' %(sum(test_out_cc==True), out_acc_cc))
+				
+		logger.info("\t\tUsing PCA upper bound approximation")
+		logger.info('\t\t\tInterpolation accuracy (#samples: %d) = %.4f' %(sum(test_out_pca==False), in_acc_pca))
+		logger.info('\t\t\tExtrapolation accuracy (#samples: %d) = %.4f' %(sum(test_out_pca==True), out_acc_pca))
+		
+		if X.shape[1] == 2:
+		
+			# apply PCA
+			pca = PCA(n_components=X.shape[1])
+			pca.fit(X_trainval)
+			pca2 = PCA(n_components=2)
+			pca2.fit(X_trainval)
+			
+			X_trainval_pca2 = pca2.transform(X_trainval)
+			X_trainval_pca = pca.transform(X_trainval)
+			X_pca = pca.transform(X)
+			X_test_pca = pca.transform(X_test)
+			
+			if True:
+				# now, the way the decision boundary stuff works is by creating
+				# a grid over all the space of the features, and asking for predictions
+				# all around the place
+				Nx = Ny = 100 # 300 x 300 grid
+				k = 0.4
+				x_max = X_pca[:,0].max() + k
+				x_min = X_pca[:,0].min() - k
+				y_max = X_pca[:,1].max() + k
+				y_min = X_pca[:,1].min() - k
+			
+				xgrid = np.arange(x_min, x_max, 1. * (x_max-x_min) / Nx)
+				ygrid = np.arange(y_min, y_max, 1. * (y_max-y_min) / Ny)
+			
+				xx, yy = np.meshgrid(xgrid, ygrid)
+				X_full_grid = np.array(list(zip(np.ravel(xx), np.ravel(yy))))
+				
+				out1 = np.zeros(X_full_grid.shape[0])
+				for i in range(X_full_grid.shape[0]):
+					out1[i] = not in_hull(X_trainval_pca2, X_full_grid[i, :])
+				out1 = out1.astype('bool')
+				
+				X_full_grid_inverse = pca2.inverse_transform(X_full_grid)
+				Yp = model.predict(X_full_grid_inverse)
+				Yp[out1] = -1
+				
+				# get decision boundary line
+				Yp = Yp.reshape(xx.shape)
+				Yb1 = np.zeros(xx.shape)
+				
+				Yb1[:-1, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb1[:-1, :])
+				Yb1[1:, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb1[1:, :])
+				Yb1[:, :-1] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb1[:, :-1])
+				Yb1[:, 1:] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb1[:, 1:])
+				
+				out2 = np.zeros(X_full_grid.shape[0])
+				for j in range(0, X_full_grid.shape[1]):
+					out2 = out2 + ( X_full_grid[:, j] < lims[j, 0] ).astype('int')
+					out2 = out2 + ( X_full_grid[:, j] > lims[j, 1] ).astype('int')
+				out2 = out2 > 0
+				
+				X_full_grid_inverse = pca2.inverse_transform(X_full_grid)
+				Yp = model.predict(X_full_grid_inverse)
+				Yp[out2] = -1
+				
+				# get decision boundary line
+				Yp = Yp.reshape(xx.shape)
+				Yb2 = np.zeros(xx.shape)
+				
+				Yb2[:-1, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb2[:-1, :])
+				Yb2[1:, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb2[1:, :])
+				Yb2[:, :-1] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb2[:, :-1])
+				Yb2[:, 1:] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb2[:, 1:])
+			
+			cmap = ListedColormap(sns.color_palette("bright", number_classes).as_hex())
+			
+			fig = plt.figure(figsize=figsize)
+			ax = fig.add_subplot(111)
+			ax.scatter(X_trainval_pca[:, 0], X_trainval_pca[:, 1], c=y_trainval, cmap=cmap, marker='s', alpha=0.1, label="train")
+			ax.scatter(X_test_pca[test_out_cc==True, 0], X_test_pca[test_out_cc==True, 1], facecolors='none', edgecolors='r', marker='D', alpha=0.8, label="out")
+			ax.scatter(X_test_pca[errs, 0], X_test_pca[errs, 1], c='k', marker='x', alpha=1, label="errors")
+			ax.scatter(X_test_pca[:, 0], X_test_pca[:, 1], c=y_test, cmap=cmap, marker='+', alpha=0.5, label="test")
+			aspect_ratio = get_aspect(ax)
+			ax.imshow(Yb1, origin='lower', interpolation=None, cmap='Greys', extent=[x_min, x_max, y_min, y_max], alpha=1.0)
+			ax.set_aspect(aspect_ratio)
+			ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.08), ncol=4)
+			ax.set_title('CC: in-acc (%d) = %.4f - out-acc (%d) = %.4f' \
+				   %(sum(test_out_cc==False), in_acc_cc, sum(test_out_cc==True), out_acc_cc))
+			plt.tight_layout()
+			plt.savefig(os.path.join(folder_name, '%s_closed_db_cc_split_%2d.png' %(dbname, split_index)))
+			plt.draw()
+			
+			
+			fig = plt.figure(figsize=figsize)
+			ax = fig.add_subplot(111)
+			ax.scatter(X_trainval_pca[:, 0], X_trainval_pca[:, 1], c=y_trainval, cmap=cmap, marker='s', alpha=0.1, label="train")
+			ax.scatter(X_test_pca[test_out_pca==True, 0], X_test_pca[test_out_pca==True, 1], facecolors='none', edgecolors='r', marker='s', alpha=0.8, label="out")
+			ax.scatter(X_test_pca[errs, 0], X_test_pca[errs, 1], c='k', marker='x', alpha=1, label="errors")
+			ax.scatter(X_test_pca[:, 0], X_test_pca[:, 1], c=y_test, cmap=cmap, marker='+', alpha=0.5, label="test")
+			aspect_ratio = get_aspect(ax)
+			ax.imshow(Yb2, origin='lower', interpolation=None, cmap='Greys', extent=[x_min, x_max, y_min, y_max], alpha=1.0)
+			ax.set_aspect(aspect_ratio)
+			ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.08), ncol=4)
+			ax.set_title('PCA: in-acc (%d) = %.4f - out-acc (%d) = %.4f' \
+						%(sum(test_out_pca==False), in_acc_pca, sum(test_out_pca==True), out_acc_pca))
+			plt.tight_layout()
+			plt.savefig(os.path.join(folder_name, '%s_closed_db_pcasplit_%02d.png' %(dbname, split_index)))
+			plt.draw()
+		
+		split_index = split_index + 1
 	
 	logger.info("Using convex combinations of training samples")
-	logger.info('\tInterpolation accuracy (#samples: %d) = %.4f' %(sum(test_out_cc==False), in_acc_cc))
-	logger.info('\tExtrapolation accuracy (#samples: %d) = %.4f' %(sum(test_out_cc==True), out_acc_cc))
+	logger.info("\tFraction of test samples inside the convex polytope: %.4f (+- %.4f)" %( np.mean(in_cc_list), np.std(in_cc_list) / np.sqrt(n_splits) ))
+	logger.info("\tFraction of test samples outside the convex polytope: %.4f (+- %.4f)" %( np.mean(out_cc_list), np.std(out_cc_list) / np.sqrt(n_splits) ))
+	logger.info('\tInterpolation accuracy: %.4f (+- %.4f)'  %( np.mean(in_acc_cc_list), np.std(in_acc_cc_list) / np.sqrt(n_splits) ))
+	logger.info('\tExtrapolation accuracy: %.4f (+- %.4f)'  %( np.mean(out_acc_cc_list), np.std(out_acc_cc_list) / np.sqrt(n_splits) ))
 			
 	logger.info("Using PCA upper bound approximation")
-	logger.info('\tInterpolation accuracy (#samples: %d) = %.4f' %(sum(test_out_pca==False), in_acc_pca))
-	logger.info('\tExtrapolation accuracy (#samples: %d) = %.4f' %(sum(test_out_pca==True), out_acc_pca))
-	
-	if X.shape[1] == 2:
-	
-		# apply PCA
-		pca = PCA(n_components=X.shape[1])
-		pca.fit(X_trainval)
-		pca2 = PCA(n_components=2)
-		pca2.fit(X_trainval)
-		
-		X_trainval_pca2 = pca2.transform(X_trainval)
-		X_trainval_pca = pca.transform(X_trainval)
-		X_pca = pca.transform(X)
-		X_test_pca = pca.transform(X_test)
-		
-		if True:
-			# now, the way the decision boundary stuff works is by creating
-			# a grid over all the space of the features, and asking for predictions
-			# all around the place
-			Nx = Ny = 100 # 300 x 300 grid
-			k = 0.4
-			x_max = X_pca[:,0].max() + k
-			x_min = X_pca[:,0].min() - k
-			y_max = X_pca[:,1].max() + k
-			y_min = X_pca[:,1].min() - k
-		
-			xgrid = np.arange(x_min, x_max, 1. * (x_max-x_min) / Nx)
-			ygrid = np.arange(y_min, y_max, 1. * (y_max-y_min) / Ny)
-		
-			xx, yy = np.meshgrid(xgrid, ygrid)
-			X_full_grid = np.array(list(zip(np.ravel(xx), np.ravel(yy))))
-			
-			out1 = np.zeros(X_full_grid.shape[0])
-			for i in range(X_full_grid.shape[0]):
-				out1[i] = not in_hull(X_trainval_pca2, X_full_grid[i, :])
-			out1 = out1.astype('bool')
-			
-			X_full_grid_inverse = pca2.inverse_transform(X_full_grid)
-			Yp = model.predict(X_full_grid_inverse)
-			Yp[out1] = -1
-			
-			# get decision boundary line
-			Yp = Yp.reshape(xx.shape)
-			Yb1 = np.zeros(xx.shape)
-			
-			Yb1[:-1, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb1[:-1, :])
-			Yb1[1:, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb1[1:, :])
-			Yb1[:, :-1] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb1[:, :-1])
-			Yb1[:, 1:] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb1[:, 1:])
-			
-			out2 = np.zeros(X_full_grid.shape[0])
-			for j in range(0, X_full_grid.shape[1]):
-				out2 = out2 + ( X_full_grid[:, j] < lims[j, 0] ).astype('int')
-				out2 = out2 + ( X_full_grid[:, j] > lims[j, 1] ).astype('int')
-			out2 = out2 > 0
-			
-			X_full_grid_inverse = pca2.inverse_transform(X_full_grid)
-			Yp = model.predict(X_full_grid_inverse)
-			Yp[out2] = -1
-			
-			# get decision boundary line
-			Yp = Yp.reshape(xx.shape)
-			Yb2 = np.zeros(xx.shape)
-			
-			Yb2[:-1, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb2[:-1, :])
-			Yb2[1:, :] = np.maximum((Yp[:-1, :] != Yp[1:, :]), Yb2[1:, :])
-			Yb2[:, :-1] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb2[:, :-1])
-			Yb2[:, 1:] = np.maximum((Yp[:, :-1] != Yp[:, 1:]), Yb2[:, 1:])
-		
-		cmap = ListedColormap(sns.color_palette("bright", number_classes).as_hex())
-		
-		fig = plt.figure(figsize=figsize)
-		ax = fig.add_subplot(111)
-		ax.scatter(X_trainval_pca[:, 0], X_trainval_pca[:, 1], c=y_trainval, cmap=cmap, marker='s', alpha=0.1, label="train")
-		ax.scatter(X_test_pca[test_out_cc==True, 0], X_test_pca[test_out_cc==True, 1], facecolors='none', edgecolors='r', marker='D', alpha=0.8, label="out")
-		ax.scatter(X_test_pca[errs, 0], X_test_pca[errs, 1], c='k', marker='x', alpha=1, label="errors")
-		ax.scatter(X_test_pca[:, 0], X_test_pca[:, 1], c=y_test, cmap=cmap, marker='+', alpha=0.5, label="test")
-		aspect_ratio = get_aspect(ax)
-		ax.imshow(Yb1, origin='lower', interpolation=None, cmap='Greys', extent=[x_min, x_max, y_min, y_max], alpha=1.0)
-		ax.set_aspect(aspect_ratio)
-		ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.08), ncol=4)
-		ax.set_title('CC: in-acc (%d) = %.4f - out-acc (%d) = %.4f' \
-			   %(sum(test_out_cc==False), in_acc_cc, sum(test_out_cc==True), out_acc_cc))
-		plt.tight_layout()
-		plt.savefig(os.path.join(folder_name, '%s_closed_db_cc.png' %(dbname)))
-		plt.draw()
-		
-		
-		fig = plt.figure(figsize=figsize)
-		ax = fig.add_subplot(111)
-		ax.scatter(X_trainval_pca[:, 0], X_trainval_pca[:, 1], c=y_trainval, cmap=cmap, marker='s', alpha=0.1, label="train")
-		ax.scatter(X_test_pca[test_out_pca==True, 0], X_test_pca[test_out_pca==True, 1], facecolors='none', edgecolors='r', marker='s', alpha=0.8, label="out")
-		ax.scatter(X_test_pca[errs, 0], X_test_pca[errs, 1], c='k', marker='x', alpha=1, label="errors")
-		ax.scatter(X_test_pca[:, 0], X_test_pca[:, 1], c=y_test, cmap=cmap, marker='+', alpha=0.5, label="test")
-		aspect_ratio = get_aspect(ax)
-		ax.imshow(Yb2, origin='lower', interpolation=None, cmap='Greys', extent=[x_min, x_max, y_min, y_max], alpha=1.0)
-		ax.set_aspect(aspect_ratio)
-		ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.08), ncol=4)
-		ax.set_title('PCA: in-acc (%d) = %.4f - out-acc (%d) = %.4f' \
-					%(sum(test_out_pca==False), in_acc_pca, sum(test_out_pca==True), out_acc_pca))
-		plt.tight_layout()
-		plt.savefig(os.path.join(folder_name, '%s_closed_db_pca.png' %(dbname)))
-		plt.draw()
+	logger.info("\tFraction of test samples inside the convex polytope: %.4f (+- %.4f)" %( np.mean(in_pca_list), np.std(in_pca_list) / np.sqrt(n_splits) ))
+	logger.info("\tFraction of test samples outside the convex polytope: %.4f (+- %.4f)" %( np.mean(out_pca_list), np.std(out_pca_list) / np.sqrt(n_splits) ))
+	logger.info('\tInterpolation accuracy: %.4f (+- %.4f)'  %( np.mean(in_acc_pca_list), np.std(in_acc_pca_list) / np.sqrt(n_splits) ))
+	logger.info('\tExtrapolation accuracy: %.4f (+- %.4f)'  %( np.mean(out_acc_pca_list), np.std(out_acc_pca_list) / np.sqrt(n_splits) ))
 	
 	logger.handlers.pop()
 	return
@@ -435,13 +473,13 @@ def main(selectedDataset = "digits"):
 if __name__ == "__main__" :
 	
 	dataList = [
-		["iris4"],
-		["iris2"],
-		["moons"],
-		["blobs"],
-		["circles"],
+#		["iris4"],
+#		["iris2"],
+#		["moons"],
+#		["blobs"],
+#		["circles"],
 		["digits"],
-#		["mnist"],
+		["mnist"],
 		]
 	for dataset in dataList:
 		main(dataset[0])
