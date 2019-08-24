@@ -101,7 +101,10 @@ def normality_departure(X_train, y_train):
 def information(X_train, y_train):
 	
 	mi = mutual_info_classif(X_train, y_train)
-	mi_mean = np.average( mi, weights=mi )
+	if sum(mi) == 0: 
+		mi_mean = 0
+	else:
+		mi_mean = np.average( mi, weights=mi )
 #	mi_std = np.std( mi )
 	
 	return mi_mean

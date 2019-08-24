@@ -157,6 +157,9 @@ if __name__ == "__main__" :
 	classifiers = get_classifiers()
 	
 	for dataset in data:
+		
+#		dataset = ['disclosure_x_bias', 774, 662, 4]
+	
 		dataset_name, did = dataset[0], dataset[1]
 		results = main(logger, dataset_name, did, classifiers, seed=42, n_splits=10)
 		
