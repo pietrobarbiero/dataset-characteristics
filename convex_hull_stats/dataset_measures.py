@@ -1,19 +1,27 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sat Aug 24 09:47:00 2019
-
-@authors: Pietro Barbiero & Alberto Tonda
-"""
-
+#
+# Copyright 2019 Pietro Barbiero and Alberto Tonda
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import numpy as np
-
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import pdist
-
 from scipy.stats import levene
 from scipy.stats import kurtosis, skew
+
 
 def dimensionality_stats(X_trainval):
 	dimensionality = X_trainval.shape[1]
@@ -34,6 +42,7 @@ def dimensionality_stats(X_trainval):
 	dist = pdist(X_trainval)
 	
 	return dimensionality, intrinsic_dim, intrinsic_dim_ratio, feature_noise, dist
+
 
 def homogeneity_class_covariances(X_train, y_train):
 	
@@ -65,6 +74,7 @@ def homogeneity_class_covariances(X_train, y_train):
 	
 	return levene_stat_avg, levene_pval_avg, levene_success_ratio
 
+
 def feature_correlation_class(X_train, y_train):
 	
 	y_u = np.unique(y_train)
@@ -72,13 +82,17 @@ def feature_correlation_class(X_train, y_train):
 		
 	for y in y_u:
 		C = np.abs( np.corrcoef( X_train[y_train==y] ) )
-		triu = C[np.triu_indices(C.shape[0], k = 1)]
-		rho.append( np.average(triu, weights=triu) )
+		try:
+			triu = C[np.triu_indices(C.shape[0], k = 1)]
+			rho.append( np.average(triu, weights=triu) )
+		except IndexError:
+			pass
 	
 	fcc_mean = np.average( rho, weights=rho )
 #	fcc_std = np.std( rho )
 	
 	return fcc_mean
+
 
 def normality_departure(X_train, y_train):
 	
@@ -108,3 +122,13 @@ def information(X_train, y_train):
 #	mi_std = np.std( mi )
 	
 	return mi_mean
+
+
+def class_stats(y):
+	values, counts = np.unique(y, return_counts=True)
+	pmax = np.max(counts)
+	pmin = np.min(counts)
+	imbalance_ratio = pmax / pmin
+	return imbalance_ratio
+
+
