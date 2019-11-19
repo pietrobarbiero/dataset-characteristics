@@ -36,17 +36,8 @@ from db_config import create_chull_stmt, insert_chull_stmt, query_chull_stmt, \
     create_model_chull_stmt, insert_model_chull_stmt, query_model_chull_stmt
 
 
-def convex_hull_stats(**kwargs):
-    seed = kwargs.get("seed")
-    n_splits = kwargs.get("n_splits")
-    cv_split = kwargs.get("split_index")
-    model: lg.SklearnWrapper = kwargs.get("model")
-    random_model = kwargs.get("random_model")
-    x_train = kwargs.get("x_train")
-    y_train = kwargs.get("y_train")
-    x_test = kwargs.get("x_val")
-    y_test = kwargs.get("y_val")
-    logger: Logger = kwargs.get("logger")
+def convex_hull_stats(seed, n_splits, split_index, model, random_model, x_train, y_train,
+                      x_val, y_val, logger, *args, **kwargs):
 
     db_name = model.db_name
     dataset_id = model.dataset_id
@@ -55,11 +46,11 @@ def convex_hull_stats(**kwargs):
 
     # load model
     learner = copy.deepcopy(model)
-    learner.set_random_seed(seed, cv_split, random_model)
+    learner.set_random_seed(seed, split_index, random_model)
     learner.load_model()
 
     # fetch stats from chull_stats table
-    query = (dataset_id, seed, n_splits, cv_split)
+    query = (dataset_id, seed, n_splits, split_index)
     chull_stats = lg.database.load_from_db(db_name, query, create_chull_stmt, query_chull_stmt)
     chull_id = chull_stats[0] if chull_stats is not None else chull_stats
 
@@ -78,7 +69,7 @@ def convex_hull_stats(**kwargs):
         if logger: logger.info("\tComputing convex-hull stats...")
 
         # basic properties
-        n_samples = x_train.shape[0] + x_test.shape[0]
+        n_samples = x_train.shape[0] + x_val.shape[0]
         n_features = x_train.shape[1]
         n_classes = len(np.unique(y_train))
 
@@ -86,7 +77,7 @@ def convex_hull_stats(**kwargs):
         scaler = StandardScaler()
         ss = scaler.fit(x_train)
         x_train = ss.transform(x_train)
-        x_test = ss.transform(x_test)
+        x_val = ss.transform(x_val)
         is_scaled = True
 
         # compute training set stats
@@ -104,33 +95,33 @@ def convex_hull_stats(**kwargs):
         sample_std_distance = np.std(distances)
 
         # convex hull test
-        out_indexes = convex_combination_test(x_train, x_test)
+        out_indexes = convex_combination_test(x_train, x_val)
         in_indexes = [not i for i in out_indexes]
-        in_hull_ratio = sum(in_indexes) / y_test.shape[0]
-        out_hull_ratio = sum(out_indexes) / y_test.shape[0]
+        in_hull_ratio = sum(in_indexes) / y_val.shape[0]
+        out_hull_ratio = sum(out_indexes) / y_val.shape[0]
         samples_out_hull_indexes = pickle.dumps(out_indexes, protocol=2)
 
         # class imbalance
         imbalance_ratio_in_hull = -1
         imbalance_ratio_out_hull = -1
-        y_in_hull = y_test[in_indexes]
-        y_out_hull = y_test[out_indexes]
+        y_in_hull = y_val[in_indexes]
+        y_out_hull = y_val[out_indexes]
         imbalance_ratio_train = class_stats(y_train)
-        imbalance_ratio_test = class_stats(y_test)
+        imbalance_ratio_val = class_stats(y_val)
         if len(y_in_hull) > 0:
             imbalance_ratio_in_hull = class_stats(y_in_hull)
         if len(y_out_hull) > 0:
             imbalance_ratio_out_hull = class_stats(y_out_hull)
 
         entry = (
-            dataset_id, dataset_name, seed, n_splits, cv_split,
+            dataset_id, dataset_name, seed, n_splits, split_index,
             n_samples, n_features, n_classes,
             intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise,
             sample_avg_distance, sample_std_distance,
             levene_stat, levene_pvalue, levene_success, feature_avg_correlation,
             feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
             in_hull_ratio, out_hull_ratio, samples_out_hull_indexes,
-            imbalance_ratio_train, imbalance_ratio_test, imbalance_ratio_in_hull, imbalance_ratio_out_hull
+            imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull
         )
 
         chull_stats = lg.database.save_to_db(db_name, entry, query,
@@ -151,7 +142,7 @@ def convex_hull_stats(**kwargs):
     levene_stat, levene_pvalue, levene_success, feature_avg_correlation, \
     feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information, \
     in_hull_ratio, out_hull_ratio, out_indexes, \
-    imbalance_ratio_train, imbalance_ratio_test, imbalance_ratio_in_hull, imbalance_ratio_out_hull = chull_stats
+    imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull = chull_stats
 
     out_indexes = pickle.loads(out_indexes)
 
@@ -165,53 +156,53 @@ def convex_hull_stats(**kwargs):
             scaler = StandardScaler()
             ss = scaler.fit(x_train)
             x_train = ss.transform(x_train)
-            x_test = ss.transform(x_test)
+            x_val = ss.transform(x_val)
 
         in_indexes = [not i for i in out_indexes]
-        x_in_hull = x_test[in_indexes]
-        y_in_hull = y_test[in_indexes]
-        x_out_hull = x_test[out_indexes]
-        y_out_hull = y_test[out_indexes]
+        x_in_hull = x_val[in_indexes]
+        y_in_hull = y_val[in_indexes]
+        x_out_hull = x_val[out_indexes]
+        y_out_hull = y_val[out_indexes]
 
         # fit model & predict
         learner.fit(x_train, y_train)
 
         y_train_pred = learner.predict(x_train)
-        y_test_pred = learner.predict(x_test)
+        y_val_pred = learner.predict(x_val)
         if len(y_in_hull) > 0:
             y_pred_in_hull = learner.predict(x_in_hull)
         if len(y_out_hull) > 0:
             y_pred_out_hull = learner.predict(x_out_hull)
 
         # accuracy
-        test_accuracy_in_hull = -1
-        test_accuracy_out_hull = -1
+        val_accuracy_in_hull = -1
+        val_accuracy_out_hull = -1
         train_accuracy = accuracy_score(y_train, y_train_pred)
-        test_accuracy = accuracy_score(y_test, y_test_pred)
+        val_accuracy = accuracy_score(y_val, y_val_pred)
         if len(y_in_hull) > 0:
-            test_accuracy_in_hull = accuracy_score(y_in_hull, y_pred_in_hull)
+            val_accuracy_in_hull = accuracy_score(y_in_hull, y_pred_in_hull)
         if len(y_out_hull) > 0:
-            test_accuracy_out_hull = accuracy_score(y_out_hull, y_pred_out_hull)
+            val_accuracy_out_hull = accuracy_score(y_out_hull, y_pred_out_hull)
 
         # f1
-        test_f1_in_hull = -1
-        test_f1_out_hull = -1
+        val_f1_in_hull = -1
+        val_f1_out_hull = -1
         train_f1 = f1_score(y_train, y_train_pred, average="weighted")
-        test_f1 = f1_score(y_test, y_test_pred, average="weighted")
+        val_f1 = f1_score(y_val, y_val_pred, average="weighted")
         if len(y_in_hull) > 0:
-            test_f1_in_hull = f1_score(y_in_hull, y_pred_in_hull, average="weighted")
+            val_f1_in_hull = f1_score(y_in_hull, y_pred_in_hull, average="weighted")
         if len(y_out_hull) > 0:
-            test_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
+            val_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
 
         # save model
         learner.save_model()
 
         entry = (
             chull_id, learner.model_id, learner.model_name,
-            train_accuracy, test_accuracy,
-            test_accuracy_in_hull, test_accuracy_out_hull,
-            train_f1, test_f1,
-            test_f1_in_hull, test_f1_out_hull
+            train_accuracy, val_accuracy,
+            val_accuracy_in_hull, val_accuracy_out_hull,
+            train_f1, val_f1,
+            val_f1_in_hull, val_f1_out_hull
         )
 
         # save stats into database
@@ -222,20 +213,20 @@ def convex_hull_stats(**kwargs):
 
     # unpack accuracy stats
     _, _, _, _, \
-        train_accuracy, test_accuracy, test_accuracy_in_hull, test_accuracy_out_hull, \
-        train_f1, test_f1, test_f1_in_hull, test_f1_out_hull = accuracy_stats
+        train_accuracy, val_accuracy, val_accuracy_in_hull, val_accuracy_out_hull, \
+        train_f1, val_f1, val_f1_in_hull, val_f1_out_hull = accuracy_stats
 
     stats = (chull_id, learner.model_id, model_name,
-             dataset_id, dataset_name, seed, n_splits, cv_split,
+             dataset_id, dataset_name, seed, n_splits, split_index,
              n_samples, n_features, n_classes,
              intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise,
              sample_avg_distance, sample_std_distance,
              levene_stat, levene_pvalue, levene_success, feature_avg_correlation,
              feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
              in_hull_ratio, out_hull_ratio,
-             train_accuracy, test_accuracy, test_accuracy_in_hull, test_accuracy_out_hull,
-             train_f1, test_f1, test_f1_in_hull, test_f1_out_hull,
-             imbalance_ratio_train, imbalance_ratio_test, imbalance_ratio_in_hull, imbalance_ratio_out_hull
+             train_accuracy, val_accuracy, val_accuracy_in_hull, val_accuracy_out_hull,
+             train_f1, val_f1, val_f1_in_hull, val_f1_out_hull,
+             imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull
     )
 
     return stats
@@ -275,16 +266,16 @@ def openml_dataset_stats(dataset_id: int, dataset_name: str,
     if len(results) > 0:
         results.columns = [
             "chull_id", "model_id", "model_name",
-            "dataset_id", "dataset_name", "seed", "n_splits", "cv_split",
+            "dataset_id", "dataset_name", "seed", "n_splits", "split_index",
             "n_samples", "n_features", "n_classes",
             "intrinsic_dimensionality", "intrinsic_dimensionality_ratio", "feature_noise",
             "sample_avg_distance", "sample_std_distance",
             "levene_stat", "levene_pvalue", "levene_success", "feature_avg_correlation",
             "feature_avg_skew", "feature_avg_kurtosis", "feature_avg_mutual_information",
             "in_hull_ratio", "out_hull_ratio",
-            "imbalance_ratio_train", "imbalance_ratio_test", "imbalance_ratio_in_hull", "imbalance_ratio_out_hull",
-            "train_accuracy", "test_accuracy", "test_accuracy_in_hull", "test_accuracy_out_hull",
-            "train_f1", "test_f1", "test_f1_in_hull", "test_f1_out_hull"
+            "imbalance_ratio_train", "imbalance_ratio_val", "imbalance_ratio_in_hull", "imbalance_ratio_out_hull",
+            "train_accuracy", "val_accuracy", "val_accuracy_in_hull", "val_accuracy_out_hull",
+            "train_f1", "val_f1", "val_f1_in_hull", "val_f1_out_hull"
         ]
 
     return results
@@ -311,22 +302,22 @@ def openml_stats_all(datasets: pd.DataFrame = None, classifiers: List = None,
 
     columns = [
         "id", "chull_id", "model_id", "model_name",
-        "train_accuracy", "test_accuracy", "test_accuracy_in_hull", "test_accuracy_out_hull",
-        "train_f1", "test_f1", "test_f1_in_hull", "test_f1_out_hull"
+        "train_accuracy", "val_accuracy", "val_accuracy_in_hull", "val_accuracy_out_hull",
+        "train_f1", "val_f1", "val_f1_in_hull", "val_f1_out_hull"
     ]
     accuracy_stats = pd.DataFrame(accuracy_stats, columns=columns).drop("id", axis=1)
     accuracy_stats = accuracy_stats.replace(-1, None)
 
     columns = [
         "chull_id",
-        "dataset_id", "dataset_name", "seed", "n_splits", "cv_split",
+        "dataset_id", "dataset_name", "seed", "n_splits", "split_index",
         "n_samples", "n_features", "n_classes",
         "intrinsic_dimensionality", "intrinsic_dimensionality_ratio", "feature_noise",
         "sample_avg_distance", "sample_std_distance",
         "levene_stat", "levene_pvalue", "levene_success", "feature_avg_correlation",
         "feature_avg_skew", "feature_avg_kurtosis", "feature_avg_mutual_information",
         "in_hull_ratio", "out_hull_ratio", "samples_out_hull_indexes",
-        "imbalance_ratio_train", "imbalance_ratio_test", "imbalance_ratio_in_hull", "imbalance_ratio_out_hull",
+        "imbalance_ratio_train", "imbalance_ratio_val", "imbalance_ratio_in_hull", "imbalance_ratio_out_hull",
     ]
     chull_stats_single = pd.DataFrame(chull_stats, columns=columns).drop("samples_out_hull_indexes", axis=1)
     chull_stats = pd.DataFrame()
@@ -334,6 +325,8 @@ def openml_stats_all(datasets: pd.DataFrame = None, classifiers: List = None,
         chull_stats = pd.concat([chull_stats, chull_stats_single])
 
     results = accuracy_stats.merge(chull_stats, on="chull_id", how="right").drop_duplicates()
-    results = results.sort_values(by=["dataset_id", "model_name", "cv_split"])
+    results = results.sort_values(by=["dataset_id", "model_name", "split_index"])
+
+    lg.close_logging(logger)
 
     return results
