@@ -29,10 +29,10 @@ from logging import Logger
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from convex_hull_tests import convex_combination_test, generalisation_accuracy, in_hull
-from dataset_measures import dimensionality_stats, homogeneity_class_covariances, \
+from .convex_hull_tests import convex_combination_test
+from .dataset_measures import dimensionality_stats, homogeneity_class_covariances, \
     feature_correlation_class, normality_departure, information, class_stats
-from db_config import create_chull_stmt, insert_chull_stmt, query_chull_stmt, \
+from .db_config import create_chull_stmt, insert_chull_stmt, query_chull_stmt, \
     create_model_chull_stmt, insert_model_chull_stmt, query_model_chull_stmt
 
 
