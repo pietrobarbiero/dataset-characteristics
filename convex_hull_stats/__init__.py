@@ -17,7 +17,7 @@
 
 __version__ = "0.0.0"
 
-from .dataset_stats import convex_hull_stats, openml_dataset_stats, openml_stats_all
+from .dataset_stats import convex_hull_stats, openml_data_set_stats, openml_stats_all
 from .convex_hull_tests import convex_combination_test, generalisation_accuracy, in_hull
 from .dataset_measures import dimensionality_stats, homogeneity_class_covariances, \
     feature_correlation_class, normality_departure, information, class_stats

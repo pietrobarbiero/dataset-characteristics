@@ -69,34 +69,34 @@ insert_chull_stmt = '''INSERT INTO CHULL_STATS(
 query_chull_stmt = '''SELECT * FROM CHULL_STATS
                       WHERE dataset_id=? AND seed=? AND n_splits=? AND cv_split=?'''
 
-create_model_chull_stmt = '''CREATE TABLE IF NOT EXISTS MODEL_CHULL(
-        id INTEGER PRIMARY KEY,
-        
-        chull_id INTEGER NOT NULL,
-        model_id INTEGER NOT NULL,
-        
-        model_name TEXT NOT NULL,
-        
-        train_accuracy REAL NOT NULL,
-        test_accuracy REAL NOT NULL,
-        test_accuracy_in_hull REAL NOT NULL,
-        test_accuracy_out_hull REAL NOT NULL,
-        
-        train_f1 REAL NOT NULL, 
-        test_f1 REAL NOT NULL, 
-        test_f1_in_hull REAL NOT NULL, 
-        test_f1_out_hull REAL NOT NULL,
-
-        UNIQUE (chull_id, model_id),
-        FOREIGN KEY (model_id) REFERENCES MODEL(id)
-        FOREIGN KEY (chull_id) REFERENCES CHULL_STATS(id) 
-        )'''
-
-insert_model_chull_stmt = '''INSERT INTO MODEL_CHULL(
-        chull_id, model_id, model_name, 
-        train_accuracy, test_accuracy, test_accuracy_in_hull, test_accuracy_out_hull,
-        train_f1, test_f1, test_f1_in_hull, test_f1_out_hull)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
-
-query_model_chull_stmt = '''SELECT * FROM MODEL_CHULL
-                            WHERE chull_id=? AND model_id=?'''
+# create_model_chull_stmt = '''CREATE TABLE IF NOT EXISTS MODEL_CHULL(
+#         id INTEGER PRIMARY KEY,
+#
+#         chull_id INTEGER NOT NULL,
+#         model_id INTEGER NOT NULL,
+#
+#         model_name TEXT NOT NULL,
+#
+#         train_accuracy REAL NOT NULL,
+#         test_accuracy REAL NOT NULL,
+#         test_accuracy_in_hull REAL NOT NULL,
+#         test_accuracy_out_hull REAL NOT NULL,
+#
+#         train_f1 REAL NOT NULL,
+#         test_f1 REAL NOT NULL,
+#         test_f1_in_hull REAL NOT NULL,
+#         test_f1_out_hull REAL NOT NULL,
+#
+#         UNIQUE (chull_id, model_id),
+#         FOREIGN KEY (model_id) REFERENCES MODEL(id)
+#         FOREIGN KEY (chull_id) REFERENCES CHULL_STATS(id)
+#         )'''
+#
+# insert_model_chull_stmt = '''INSERT INTO MODEL_CHULL(
+#         chull_id, model_id, model_name,
+#         train_accuracy, test_accuracy, test_accuracy_in_hull, test_accuracy_out_hull,
+#         train_f1, test_f1, test_f1_in_hull, test_f1_out_hull)
+#         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+#
+# query_model_chull_stmt = '''SELECT * FROM MODEL_CHULL
+#                             WHERE chull_id=? AND model_id=?'''

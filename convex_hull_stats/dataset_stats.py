@@ -14,107 +14,105 @@
 #
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os
 from typing import List
 import traceback
 import math
+from lazygrid.lazy_estimator import LazyPipeline
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import cross_validate, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 import pickle
 import copy
 import numpy as np
 import pandas as pd
 import lazygrid as lg
-from logging import Logger
+import logging
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
+import warnings
+
+from tqdm import tqdm
+
+warnings.filterwarnings("ignore")
 from .convex_hull_tests import convex_combination_test
 from .dataset_measures import dimensionality_stats, homogeneity_class_covariances, \
     feature_correlation_class, normality_departure, information, class_stats
-from .db_config import create_chull_stmt, insert_chull_stmt, query_chull_stmt, \
-    create_model_chull_stmt, insert_model_chull_stmt, query_model_chull_stmt
+from .db_config import create_chull_stmt, insert_chull_stmt, query_chull_stmt
 
 
-def convex_hull_stats(seed, n_splits, split_index, model, random_model, x_train, y_train,
-                      x_val, y_val, logger, *args, **kwargs):
-
-    db_name = model.db_name
-    dataset_id = model.dataset_id
-    dataset_name = model.dataset_name
-    model_name = model.model_name
-
-    # load model
-    learner = copy.deepcopy(model)
-    learner.set_random_seed(seed, split_index, random_model)
-    learner.load_model()
+def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, random_state,
+                      n_splits, split_idx, data_set_id, data_set_name):
+    db_name = os.path.join(model.database, "database.sqlite")
+    scaled_data = False
+    test_accuracy_in_hull = -1
+    test_accuracy_out_hull = -1
+    test_f1_in_hull = -1
+    test_f1_out_hull = -1
 
     # fetch stats from chull_stats table
-    query = (dataset_id, seed, n_splits, split_index)
-    chull_stats = lg.database.load_from_db(db_name, query, create_chull_stmt, query_chull_stmt)
+    query = (data_set_id, random_state, n_splits, split_idx)
+    chull_stats = lg.database._load_from_db(db_name, query, create_chull_stmt, query_chull_stmt)
     chull_id = chull_stats[0] if chull_stats is not None else chull_stats
 
-    if None not in [learner.model_id, chull_id]:
-
-        if logger: logger.info("\tBoth model and stats found!")
-
-    query_model_chull = (chull_id, learner.model_id)
-    accuracy_stats = lg.database.load_from_db(db_name, query_model_chull,
-                                              create_model_chull_stmt, query_model_chull_stmt)
-
-    # compute convex-hull stats if they haven't been computed yet
-    is_scaled = False
     if chull_id is None:
 
-        if logger: logger.info("\tComputing convex-hull stats...")
-
         # basic properties
-        n_samples = x_train.shape[0] + x_val.shape[0]
-        n_features = x_train.shape[1]
+        n_samples = X_train.shape[0] + X_test.shape[0]
+        n_features = X_train.shape[1]
         n_classes = len(np.unique(y_train))
 
         # rescale data
         scaler = StandardScaler()
-        ss = scaler.fit(x_train)
-        x_train = ss.transform(x_train)
-        x_val = ss.transform(x_val)
-        is_scaled = True
+        ss = scaler.fit(X_train)
+        X_train_scaled = ss.transform(X_train)
+        X_test_scaled = ss.transform(X_test)
+        X_train_scaled = pd.DataFrame(X_train_scaled)
+        X_test_scaled = pd.DataFrame(X_test_scaled)
+        X_train_scaled.index = X_train.index
+        X_test_scaled.index = X_test.index
+        X_train_scaled.columns = X_train.columns
+        X_test_scaled.columns = X_test.columns
+        X_train = X_train_scaled
+        X_test = X_test_scaled
+        scaled_data = True
 
         # compute training set stats
-        levene_stat, levene_pvalue, levene_success = homogeneity_class_covariances(x_train, y_train)
+        levene_stat, levene_pvalue, levene_success = homogeneity_class_covariances(X_train.values, y_train)
         if math.isnan(levene_pvalue):
             levene_pvalue = -1
         if math.isnan(levene_stat):
             levene_stat = -1
-        feature_avg_correlation = feature_correlation_class(x_train, y_train)
-        feature_avg_skew, feature_avg_kurtosis = normality_departure(x_train, y_train)
-        feature_avg_mutual_information = information(x_train, y_train)
+        feature_avg_correlation = feature_correlation_class(X_train.values, y_train)
+        feature_avg_skew, feature_avg_kurtosis = normality_departure(X_train.values, y_train)
+        feature_avg_mutual_information = information(X_train.values, y_train)
         dimensionality, intrinsic_dimensionality, \
-        intrinsic_dimensionality_ratio, feature_noise, distances = dimensionality_stats(x_train)
+        intrinsic_dimensionality_ratio, feature_noise, distances = dimensionality_stats(X_train.values)
         sample_avg_distance = np.average(distances, weights=distances)
         sample_std_distance = np.std(distances)
 
         # convex hull test
-        out_indexes = convex_combination_test(x_train, x_val)
+        out_indexes = convex_combination_test(X_train.values, X_test.values)
         in_indexes = [not i for i in out_indexes]
-        in_hull_ratio = sum(in_indexes) / y_val.shape[0]
-        out_hull_ratio = sum(out_indexes) / y_val.shape[0]
+        in_hull_ratio = sum(in_indexes) / y_test.shape[0]
+        out_hull_ratio = sum(out_indexes) / y_test.shape[0]
         samples_out_hull_indexes = pickle.dumps(out_indexes, protocol=2)
 
         # class imbalance
         imbalance_ratio_in_hull = -1
         imbalance_ratio_out_hull = -1
-        y_in_hull = y_val[in_indexes]
-        y_out_hull = y_val[out_indexes]
+        y_in_hull = y_test[in_indexes]
+        y_out_hull = y_test[out_indexes]
         imbalance_ratio_train = class_stats(y_train)
-        imbalance_ratio_val = class_stats(y_val)
+        imbalance_ratio_val = class_stats(y_test)
         if len(y_in_hull) > 0:
             imbalance_ratio_in_hull = class_stats(y_in_hull)
         if len(y_out_hull) > 0:
             imbalance_ratio_out_hull = class_stats(y_out_hull)
 
         entry = (
-            dataset_id, dataset_name, seed, n_splits, split_index,
+            data_set_id, data_set_name, random_state, n_splits, split_idx,
             n_samples, n_features, n_classes,
             intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise,
             sample_avg_distance, sample_std_distance,
@@ -124,15 +122,15 @@ def convex_hull_stats(seed, n_splits, split_index, model, random_model, x_train,
             imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull
         )
 
-        chull_stats = lg.database.save_to_db(db_name, entry, query,
-                                             create_chull_stmt, insert_chull_stmt,
-                                             query_chull_stmt)
+        chull_stats = lg.database._save_to_db(db_name, entry, query,
+                                              create_chull_stmt, insert_chull_stmt,
+                                              query_chull_stmt)
 
-        # chull_id = chull_stats[0]
-        try:
-            chull_id = chull_stats[0]
-        except TypeError:
-            print(traceback.format_exc())
+        # # chull_id = chull_stats[0]
+        # try:
+        #     chull_id = chull_stats[0]
+        # except TypeError:
+        #     print(traceback.format_exc())
 
     # unpack convex-hull stats
     _, _, _, _, _, _, \
@@ -143,190 +141,159 @@ def convex_hull_stats(seed, n_splits, split_index, model, random_model, x_train,
     feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information, \
     in_hull_ratio, out_hull_ratio, out_indexes, \
     imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull = chull_stats
-
     out_indexes = pickle.loads(out_indexes)
 
-    # train model if it hasn't been fitted yet
-    if not accuracy_stats:
+    # rescale data
+    if not scaled_data:
+        scaler = StandardScaler()
+        ss = scaler.fit(X_train)
+        X_train_scaled = ss.transform(X_train)
+        X_test_scaled = ss.transform(X_test)
+        X_train_scaled = pd.DataFrame(X_train_scaled)
+        X_test_scaled = pd.DataFrame(X_test_scaled)
+        X_train_scaled.index = X_train.index
+        X_test_scaled.index = X_test.index
+        X_train_scaled.columns = X_train.columns
+        X_test_scaled.columns = X_test.columns
+        X_train = X_train_scaled
+        X_test = X_test_scaled
+        scaled_data = True
 
-        if logger: logger.info("\tTraining model...")
+    # convex hull indexes
+    in_indexes = [not i for i in out_indexes]
+    X_in_hull = X_test.iloc[in_indexes]
+    y_in_hull = y_test[in_indexes]
+    X_out_hull = X_test.iloc[out_indexes]
+    y_out_hull = y_test[out_indexes]
 
-        # rescale data
-        if not is_scaled:
-            scaler = StandardScaler()
-            ss = scaler.fit(x_train)
-            x_train = ss.transform(x_train)
-            x_val = ss.transform(x_val)
+    # fit model & predict
+    model.fit(X_train, y_train)
 
-        in_indexes = [not i for i in out_indexes]
-        x_in_hull = x_val[in_indexes]
-        y_in_hull = y_val[in_indexes]
-        x_out_hull = x_val[out_indexes]
-        y_out_hull = y_val[out_indexes]
+    # predictions
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
 
-        # fit model & predict
-        learner.fit(x_train, y_train)
+    # scores
+    train_accuracy = accuracy_score(y_train, y_train_pred)
+    test_accuracy = accuracy_score(y_test, y_test_pred)
+    train_f1 = f1_score(y_train, y_train_pred, average="weighted")
+    test_f1 = f1_score(y_test, y_test_pred, average="weighted")
+    if len(y_in_hull) > 0:
+        y_pred_in_hull = model.predict(X_in_hull)
+        test_accuracy_in_hull = accuracy_score(y_in_hull, y_pred_in_hull)
+        test_f1_in_hull = f1_score(y_in_hull, y_pred_in_hull, average="weighted")
+    if len(y_out_hull) > 0:
+        y_pred_out_hull = model.predict(X_out_hull)
+        test_accuracy_out_hull = accuracy_score(y_out_hull, y_pred_out_hull)
+        test_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
 
-        y_train_pred = learner.predict(x_train)
-        y_val_pred = learner.predict(x_val)
-        if len(y_in_hull) > 0:
-            y_pred_in_hull = learner.predict(x_in_hull)
-        if len(y_out_hull) > 0:
-            y_pred_out_hull = learner.predict(x_out_hull)
+    stats = {
+        "data_set_id": data_set_id, "data_set_name": data_set_name, "model_name": str(model),
 
-        # accuracy
-        val_accuracy_in_hull = -1
-        val_accuracy_out_hull = -1
-        train_accuracy = accuracy_score(y_train, y_train_pred)
-        val_accuracy = accuracy_score(y_val, y_val_pred)
-        if len(y_in_hull) > 0:
-            val_accuracy_in_hull = accuracy_score(y_in_hull, y_pred_in_hull)
-        if len(y_out_hull) > 0:
-            val_accuracy_out_hull = accuracy_score(y_out_hull, y_pred_out_hull)
+        "random_state": random_state, "n_splits": n_splits, "split_idx": split_idx,
+        "n_samples": n_samples, "n_features": n_features, "n_classes": n_classes,
 
-        # f1
-        val_f1_in_hull = -1
-        val_f1_out_hull = -1
-        train_f1 = f1_score(y_train, y_train_pred, average="weighted")
-        val_f1 = f1_score(y_val, y_val_pred, average="weighted")
-        if len(y_in_hull) > 0:
-            val_f1_in_hull = f1_score(y_in_hull, y_pred_in_hull, average="weighted")
-        if len(y_out_hull) > 0:
-            val_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
+        "intrinsic_dimensionality": intrinsic_dimensionality,
+        "intrinsic_dimensionality_ratio": intrinsic_dimensionality_ratio,
+        "feature_noise": feature_noise,
 
-        # save model
-        learner.save_model()
+        "sample_avg_distance": sample_avg_distance,
+        "sample_std_distance": sample_std_distance,
 
-        entry = (
-            chull_id, learner.model_id, learner.model_name,
-            train_accuracy, val_accuracy,
-            val_accuracy_in_hull, val_accuracy_out_hull,
-            train_f1, val_f1,
-            val_f1_in_hull, val_f1_out_hull
-        )
+        "levene_stat": levene_stat,
+        "levene_pvalue": levene_pvalue,
+        "levene_success": levene_success,
 
-        # save stats into database
-        query_model_chull = (chull_id, learner.model_id)
-        accuracy_stats = lg.database.save_to_db(db_name, entry, query_model_chull,
-                                                create_model_chull_stmt, insert_model_chull_stmt,
-                                                query_model_chull_stmt)
+        "feature_avg_correlation": feature_avg_correlation,
+        "feature_avg_skew": feature_avg_skew,
+        "feature_avg_kurtosis": feature_avg_kurtosis,
+        "feature_avg_mutual_information": feature_avg_mutual_information,
 
-    # unpack accuracy stats
-    _, _, _, _, \
-        train_accuracy, val_accuracy, val_accuracy_in_hull, val_accuracy_out_hull, \
-        train_f1, val_f1, val_f1_in_hull, val_f1_out_hull = accuracy_stats
+        "in_hull_ratio": in_hull_ratio,
+        "out_hull_ratio": out_hull_ratio,
 
-    stats = (chull_id, learner.model_id, model_name,
-             dataset_id, dataset_name, seed, n_splits, split_index,
-             n_samples, n_features, n_classes,
-             intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise,
-             sample_avg_distance, sample_std_distance,
-             levene_stat, levene_pvalue, levene_success, feature_avg_correlation,
-             feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
-             in_hull_ratio, out_hull_ratio,
-             train_accuracy, val_accuracy, val_accuracy_in_hull, val_accuracy_out_hull,
-             train_f1, val_f1, val_f1_in_hull, val_f1_out_hull,
-             imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull
-    )
+        "imbalance_ratio_train": imbalance_ratio_train,
+        "imbalance_ratio_val": imbalance_ratio_val,
+        "imbalance_ratio_in_hull": imbalance_ratio_in_hull,
+        "imbalance_ratio_out_hull": imbalance_ratio_out_hull,
+
+        "train_accuracy": train_accuracy,
+        "val_accuracy": test_accuracy,
+        "val_accuracy_in_hull": test_accuracy_in_hull,
+        "val_accuracy_out_hull": test_accuracy_out_hull,
+
+        "train_f1": train_f1, "val_f1": test_f1,
+        "val_f1_in_hull": test_f1_in_hull, "val_f1_out_hull": test_f1_out_hull
+    }
+
+    stats = pd.DataFrame.from_records([stats]).replace(to_replace=[-1], value=[None])
 
     return stats
 
 
-def openml_dataset_stats(dataset_id: int, dataset_name: str,
-                         classifiers: List = None, db_name: str = None, logger: Logger = None):
-
-    if not logger:
-        logger = lg.initialize_logging(log_name="default-log")
+def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: List = None, db_name: str = None,
+                          n_splits: int = 10, random_state: int = 42):
     if not db_name:
-        db_name = "default-database"
+        db_name = os.path.join("database", data_set_name)
     if not classifiers:
-        classifiers = [RandomForestClassifier(), LogisticRegression(), SVC()]
-
-    # load data
-    x, y, n_classes = lg.load_openml_dataset(data_id=dataset_id, dataset_name=dataset_name, logger=logger)
-
-    results = pd.DataFrame()
-
-    for classifier in classifiers:
-        model = lg.SklearnWrapper(classifier, dataset_id=dataset_id,
-                                  dataset_name=dataset_name, db_name=db_name)
-
-        try:
-            score, fitted_models, y_pred_list, y_list = lg.cross_validation(model, x=x, y=y,
-                                                                            generic_score=convex_hull_stats,
-                                                                            logger=logger)
-
-            score_table = pd.DataFrame.from_dict(score).transpose()
-
-            results = pd.concat([results, score_table])
-
-        except:
-            logger.exception(traceback.format_exc())
-
-    if len(results) > 0:
-        results.columns = [
-            "chull_id", "model_id", "model_name",
-            "dataset_id", "dataset_name", "seed", "n_splits", "split_index",
-            "n_samples", "n_features", "n_classes",
-            "intrinsic_dimensionality", "intrinsic_dimensionality_ratio", "feature_noise",
-            "sample_avg_distance", "sample_std_distance",
-            "levene_stat", "levene_pvalue", "levene_success", "feature_avg_correlation",
-            "feature_avg_skew", "feature_avg_kurtosis", "feature_avg_mutual_information",
-            "in_hull_ratio", "out_hull_ratio",
-            "imbalance_ratio_train", "imbalance_ratio_val", "imbalance_ratio_in_hull", "imbalance_ratio_out_hull",
-            "train_accuracy", "val_accuracy", "val_accuracy_in_hull", "val_accuracy_out_hull",
-            "train_f1", "val_f1", "val_f1_in_hull", "val_f1_out_hull"
+        classifiers = [
+            LazyPipeline([("RandomForestClassifier", RandomForestClassifier())], database=db_name),
+            LazyPipeline([("LogisticRegression", LogisticRegression())], database=db_name),
+            LazyPipeline([("SVC", SVC())], database=db_name),
         ]
 
-    return results
-
-
-def openml_stats_all(datasets: pd.DataFrame = None, classifiers: List = None,
-                     db_name: str = None, logger: Logger = None):
-
-    if not logger:
-        logger = lg.initialize_logging(log_name="default-log")
-    if not db_name:
-        db_name = "default-database"
-    if not classifiers:
-        classifiers = [RandomForestClassifier(), LogisticRegression(), SVC()]
-    if datasets is None:
-        datasets = lg.fetch_datasets(task="classification", min_classes=2,
-                                     max_samples=300, max_features=10, logger=logger)
-
-    for index, dataset in datasets.iterrows():
-        openml_dataset_stats(dataset.did, dataset.name, classifiers, db_name, logger)
-
-    accuracy_stats = lg.load_all_from_db(db_name=db_name, table_name="MODEL_CHULL")
-    chull_stats = lg.load_all_from_db(db_name=db_name, table_name="CHULL_STATS")
-
-    columns = [
-        "id", "chull_id", "model_id", "model_name",
-        "train_accuracy", "val_accuracy", "val_accuracy_in_hull", "val_accuracy_out_hull",
-        "train_f1", "val_f1", "val_f1_in_hull", "val_f1_out_hull"
-    ]
-    accuracy_stats = pd.DataFrame(accuracy_stats, columns=columns).drop("id", axis=1)
-    accuracy_stats = accuracy_stats.replace(-1, None)
-
-    columns = [
-        "chull_id",
-        "dataset_id", "dataset_name", "seed", "n_splits", "split_index",
-        "n_samples", "n_features", "n_classes",
-        "intrinsic_dimensionality", "intrinsic_dimensionality_ratio", "feature_noise",
-        "sample_avg_distance", "sample_std_distance",
-        "levene_stat", "levene_pvalue", "levene_success", "feature_avg_correlation",
-        "feature_avg_skew", "feature_avg_kurtosis", "feature_avg_mutual_information",
-        "in_hull_ratio", "out_hull_ratio", "samples_out_hull_indexes",
-        "imbalance_ratio_train", "imbalance_ratio_val", "imbalance_ratio_in_hull", "imbalance_ratio_out_hull",
-    ]
-    chull_stats_single = pd.DataFrame(chull_stats, columns=columns).drop("samples_out_hull_indexes", axis=1)
     chull_stats = pd.DataFrame()
+
+    # load data
+    X, y, n_classes = lg.datasets.load_openml_dataset(data_id=data_set_id, dataset_name=data_set_name)
+    X = pd.DataFrame(X)
+
+    # TODO: tqdm
     for classifier in classifiers:
-        chull_stats = pd.concat([chull_stats, chull_stats_single])
 
-    results = accuracy_stats.merge(chull_stats, on="chull_id", how="right").drop_duplicates()
-    results = results.sort_values(by=["dataset_id", "model_name", "split_index"])
+        try:
+            stats = pd.DataFrame()
+            cv = StratifiedKFold(n_splits=n_splits, random_state=random_state, shuffle=True)
+            split_idx = 0
+            for train_index, test_index in cv.split(X, y):
+                X_train, y_train = X.iloc[train_index], y[train_index]
+                X_test, y_test = X.iloc[test_index], y[test_index]
 
-    lg.close_logging(logger)
+                model = copy.deepcopy(classifier)
+                scores = convex_hull_stats(model, X_train, y_train, X_test, y_test, random_state,
+                                           n_splits, split_idx, data_set_id, data_set_name)
 
-    return results
+                stats = pd.concat([stats, scores], ignore_index=True)
+
+                split_idx += 1
+
+            chull_stats = pd.concat([chull_stats, stats], ignore_index=True)
+
+        except:
+            logging.exception("Error on data set (%d, %s)" % (data_set_id, data_set_name))
+
+    return chull_stats
+
+
+def openml_stats_all(data_sets: pd.DataFrame = None, classifiers: List = None, db_name: str = None):
+
+    logging.basicConfig(filename="chull-stats.log",
+                        filemode='a',
+                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        level=logging.DEBUG)
+
+    if data_sets is None:
+        data_sets = lg.datasets.fetch_datasets(task="classification", min_classes=2,
+                                               max_samples=300, max_features=10)
+
+    results = pd.DataFrame()
+    progress_bar = tqdm(np.arange(data_sets.shape[0]), leave=False, position=0)
+    for i in progress_bar:
+        data_set = data_sets.iloc[i]
+        progress_bar.set_description("Analysis of data set: %s" % data_set.name)
+        chull_stats = openml_data_set_stats(data_set.did, data_set.name, classifiers, db_name)
+        results = pd.concat([results, chull_stats], ignore_index=True)
+        results.to_csv("results.csv")
+
+    return
