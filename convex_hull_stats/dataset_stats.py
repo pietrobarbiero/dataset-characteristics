@@ -284,7 +284,7 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
             parallel = Parallel(n_jobs=n_splits, prefer="threads")
             scores = parallel(
                 delayed(cross_validation)(
-                    copy.deepcopy(classifier), copy.deepcopy(X), y, train_index, test_index, random_state,
+                    copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
                     n_splits, split_idx, data_set_id, data_set_name)
                 for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
 
