@@ -15,10 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import shutil
 from typing import List
 import traceback
 import math
+
+from joblib import Parallel, delayed
 from lazygrid.lazy_estimator import LazyPipeline
+from sklearn import clone
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import cross_validate, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
@@ -231,6 +235,21 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
     return stats
 
 
+def cross_validation(classifier, X, y, train_index, test_index,
+                     random_state, n_splits, split_idx, data_set_id,
+                     data_set_name):
+
+    X_train, y_train = X.iloc[train_index], y[train_index]
+    X_test, y_test = X.iloc[test_index], y[test_index]
+
+    model = copy.deepcopy(classifier)
+    scores = convex_hull_stats(model, X_train, y_train, X_test, y_test, random_state,
+                               n_splits, split_idx, data_set_id, data_set_name)
+
+    return scores
+
+
+
 def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: List = None, db_name: str = None,
                           n_splits: int = 10, random_state: int = 42):
     if not db_name:
@@ -248,45 +267,57 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
     X, y, n_classes = lg.datasets.load_openml_dataset(data_id=data_set_id, dataset_name=data_set_name)
     X = pd.DataFrame(X)
 
-    # TODO: tqdm
+    # TODO: tqdm?
     for classifier in classifiers:
 
         try:
-            stats = pd.DataFrame()
             cv = StratifiedKFold(n_splits=n_splits, random_state=random_state, shuffle=True)
-            split_idx = 0
-            for train_index, test_index in cv.split(X, y):
-                X_train, y_train = X.iloc[train_index], y[train_index]
-                X_test, y_test = X.iloc[test_index], y[test_index]
+            splits = np.arange(n_splits)
 
-                model = copy.deepcopy(classifier)
-                scores = convex_hull_stats(model, X_train, y_train, X_test, y_test, random_state,
-                                           n_splits, split_idx, data_set_id, data_set_name)
+            # We clone the estimator to make sure that all the folds are
+            # independent, and that it is pickle-able.
+            parallel = Parallel(n_jobs=2)
+            scores = parallel(
+                delayed(cross_validation)(
+                    copy.deepcopy(classifier), copy.deepcopy(X), y, train_index, test_index, random_state,
+                    n_splits, split_idx, data_set_id, data_set_name)
+                for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
 
-                stats = pd.concat([stats, scores], ignore_index=True)
-
-                split_idx += 1
-
-            chull_stats = pd.concat([chull_stats, stats], ignore_index=True)
+            for score in scores:
+                chull_stats = pd.concat([chull_stats, score], ignore_index=True)
 
         except:
-            logging.exception("Error on data set (%d, %s)" % (data_set_id, data_set_name))
+            logging.exception(": data set (%d, %s)" % (data_set_id, data_set_name))
 
     return chull_stats
 
 
-def openml_stats_all(data_sets: pd.DataFrame = None, classifiers: List = None, db_name: str = None):
+def openml_stats_all(data_sets: pd.DataFrame = None, classifiers: List = None, db_name: str = None,
+                     log_file: str = "./log/data_set_stats.log", output_file: str = "./results/data_set_stats.csv"):
 
-    logging.basicConfig(filename="chull-stats.log",
+    # initialize logging
+    log_dir = os.path.dirname(log_file)
+    if os.path.isdir(log_dir):
+        shutil.rmtree(log_dir)
+    os.makedirs(log_dir)
+    logging.basicConfig(filename=log_file,
                         filemode='a',
                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                         datefmt='%H:%M:%S',
                         level=logging.DEBUG)
 
+    # create output folder
+    output_dir = os.path.dirname(output_file)
+    if os.path.isdir(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
+
+
     if data_sets is None:
         data_sets = lg.datasets.fetch_datasets(task="classification", min_classes=2,
                                                max_samples=300, max_features=10)
 
+    # analyze data sets
     results = pd.DataFrame()
     progress_bar = tqdm(np.arange(data_sets.shape[0]), leave=False, position=0)
     for i in progress_bar:
@@ -294,6 +325,6 @@ def openml_stats_all(data_sets: pd.DataFrame = None, classifiers: List = None, d
         progress_bar.set_description("Analysis of data set: %s" % data_set.name)
         chull_stats = openml_data_set_stats(data_set.did, data_set.name, classifiers, db_name)
         results = pd.concat([results, chull_stats], ignore_index=True)
-        results.to_csv("results.csv")
+        results.to_csv(output_file)
 
     return
