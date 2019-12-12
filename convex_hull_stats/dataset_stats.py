@@ -14,12 +14,18 @@
 #
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import os
+import sys
+stderr = sys.stderr
+sys.stderr = open(os.devnull, 'w')
+import keras
+sys.stderr = stderr
 import os
 import shutil
 from typing import List
 import traceback
 import math
-
 from joblib import Parallel, delayed
 from lazygrid.lazy_estimator import LazyPipeline
 from sklearn import clone
@@ -267,7 +273,6 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
     X, y, n_classes = lg.datasets.load_openml_dataset(data_id=data_set_id, dataset_name=data_set_name)
     X = pd.DataFrame(X)
 
-    # TODO: tqdm?
     for classifier in classifiers:
 
         try:
@@ -276,7 +281,7 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
 
             # We clone the estimator to make sure that all the folds are
             # independent, and that it is pickle-able.
-            parallel = Parallel(n_jobs=2)
+            parallel = Parallel(n_jobs=n_splits, prefer="threads")
             scores = parallel(
                 delayed(cross_validation)(
                     copy.deepcopy(classifier), copy.deepcopy(X), y, train_index, test_index, random_state,
