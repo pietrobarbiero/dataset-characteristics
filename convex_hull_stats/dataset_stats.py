@@ -17,10 +17,10 @@
 
 import os
 import sys
-stderr = sys.stderr
-sys.stderr = open(os.devnull, 'w')
-import keras
-sys.stderr = stderr
+# stderr = sys.stderr
+# sys.stderr = open(os.devnull, 'w')
+# import keras
+# sys.stderr = stderr
 import os
 import shutil
 from typing import List
@@ -41,10 +41,9 @@ import logging
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-import warnings
-
 from tqdm import tqdm
 
+import warnings
 warnings.filterwarnings("ignore")
 from .convex_hull_tests import convex_combination_test
 from .dataset_measures import dimensionality_stats, homogeneity_class_covariances, \
@@ -74,6 +73,7 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
         n_classes = len(np.unique(y_train))
 
         # rescale data
+        logging.info("Split: %d - Scaling data..." % split_idx)
         scaler = StandardScaler()
         ss = scaler.fit(X_train)
         X_train_scaled = ss.transform(X_train)
@@ -87,8 +87,10 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
         X_train = X_train_scaled
         X_test = X_test_scaled
         scaled_data = True
+        logging.info("Split: %d - Data scaled!" % split_idx)
 
         # compute training set stats
+        logging.info("Split: %d - Computing data set stats..." % split_idx)
         levene_stat, levene_pvalue, levene_success = homogeneity_class_covariances(X_train.values, y_train)
         if math.isnan(levene_pvalue):
             levene_pvalue = -1
@@ -101,13 +103,16 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
         intrinsic_dimensionality_ratio, feature_noise, distances = dimensionality_stats(X_train.values)
         sample_avg_distance = np.average(distances, weights=distances)
         sample_std_distance = np.std(distances)
+        logging.info("Split: %d - Data set stats computed!" % split_idx)
 
         # convex hull test
+        logging.info("Split: %d - Computing convex hull..." % split_idx)
         out_indexes = convex_combination_test(X_train.values, X_test.values)
         in_indexes = [not i for i in out_indexes]
         in_hull_ratio = sum(in_indexes) / y_test.shape[0]
         out_hull_ratio = sum(out_indexes) / y_test.shape[0]
         samples_out_hull_indexes = pickle.dumps(out_indexes, protocol=2)
+        logging.info("Split: %d - Convex hull computed!" % split_idx)
 
         # class imbalance
         imbalance_ratio_in_hull = -1
@@ -177,8 +182,11 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
     y_out_hull = y_test[out_indexes]
 
     # fit model & predict
+    logging.info("Split: %d - Fitting classifier..." % split_idx)
     model.fit(X_train, y_train)
+    logging.info("Split: %d - Classifier fitted!" % split_idx)
 
+    logging.info("Split: %d - Computing predictions..." % split_idx)
     # predictions
     y_train_pred = model.predict(X_train)
     y_test_pred = model.predict(X_test)
@@ -196,6 +204,7 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
         y_pred_out_hull = model.predict(X_out_hull)
         test_accuracy_out_hull = accuracy_score(y_out_hull, y_pred_out_hull)
         test_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
+    logging.info("Split: %d - Predictions computed!" % split_idx)
 
     stats = {
         "data_set_id": data_set_id, "data_set_name": data_set_name, "model_name": str(model),
@@ -245,12 +254,16 @@ def cross_validation(classifier, X, y, train_index, test_index,
                      random_state, n_splits, split_idx, data_set_id,
                      data_set_name):
 
+    logging.info("Staring work on split: %d" % split_idx)
+
     X_train, y_train = X.iloc[train_index], y[train_index]
     X_test, y_test = X.iloc[test_index], y[test_index]
 
     model = copy.deepcopy(classifier)
     scores = convex_hull_stats(model, X_train, y_train, X_test, y_test, random_state,
                                n_splits, split_idx, data_set_id, data_set_name)
+
+    logging.info("Finished work on split: %d" % split_idx)
 
     return scores
 
@@ -273,7 +286,12 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
     X, y, n_classes = lg.datasets.load_openml_dataset(data_id=data_set_id, dataset_name=data_set_name)
     X = pd.DataFrame(X)
 
+    logging.info("%s has %d samples and %d features" % (data_set_name, X.shape[0], X.shape[1]))
+
     for classifier in classifiers:
+
+        model_name = str([estimator.__class__.__name__ for _, estimator in classifier.steps])
+        logging.info("Starting analysis using classifier: %s" % model_name)
 
         try:
             cv = StratifiedKFold(n_splits=n_splits, random_state=random_state, shuffle=True)
@@ -294,29 +312,18 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
         except:
             logging.exception(": data set (%d, %s)" % (data_set_id, data_set_name))
 
+        logging.info("Finished analysis using classifier: %s" % model_name)
+
     return chull_stats
 
 
 def openml_stats_all(data_sets: pd.DataFrame = None, classifiers: List = None, db_name: str = None,
-                     log_file: str = "./log/data_set_stats.log", output_file: str = "./results/data_set_stats.csv"):
-
-    # initialize logging
-    log_dir = os.path.dirname(log_file)
-    if os.path.isdir(log_dir):
-        shutil.rmtree(log_dir)
-    os.makedirs(log_dir)
-    logging.basicConfig(filename=log_file,
-                        filemode='a',
-                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                        datefmt='%H:%M:%S',
-                        level=logging.DEBUG)
+                     output_file: str = "./results/data_set_stats.csv"):
 
     # create output folder
     output_dir = os.path.dirname(output_file)
-    if os.path.isdir(output_dir):
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir)
-
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
 
     if data_sets is None:
         data_sets = lg.datasets.fetch_datasets(task="classification", min_classes=2,
@@ -328,8 +335,10 @@ def openml_stats_all(data_sets: pd.DataFrame = None, classifiers: List = None, d
     for i in progress_bar:
         data_set = data_sets.iloc[i]
         progress_bar.set_description("Analysis of data set: %s" % data_set.name)
+        logging.info("Starting analysis of data set: %s" % data_set.name)
         chull_stats = openml_data_set_stats(data_set.did, data_set.name, classifiers, db_name)
         results = pd.concat([results, chull_stats], ignore_index=True)
         results.to_csv(output_file)
+        logging.info("Finished analysis of data set: %s" % data_set.name)
 
     return
