@@ -24,6 +24,7 @@ create_chull_stmt = '''CREATE TABLE IF NOT EXISTS CHULL_STATS(
         seed INTEGER NOT NULL,
         n_splits INTEGER NOT NULL,
         cv_split INTEGER NOT NULL,
+        model_name TEXT NOT NULL,
         
         n_samples INTEGER NOT NULL,
         n_features INTEGER NOT NULL,
@@ -53,22 +54,34 @@ create_chull_stmt = '''CREATE TABLE IF NOT EXISTS CHULL_STATS(
         imbalance_ratio_in_hull REAL NOT NULL, 
         imbalance_ratio_out_hull REAL NOT NULL,
         
-        UNIQUE (dataset_id, seed, n_splits, cv_split) 
+        predictor_dumped BLOB NOT NULL, 
+        train_index_dumped BLOB NOT NULL, 
+        test_index_dumped BLOB NOT NULL, 
+        in_indexes_dumped BLOB NOT NULL, 
+        out_indexes_dumped BLOB NOT NULL, 
+        y_train_dumped BLOB NOT NULL, 
+        y_train_pred_dumped BLOB NOT NULL, 
+        y_test_dumped BLOB NOT NULL,
+        y_test_pred_dumped BLOB NOT NULL, 
+        
+        UNIQUE (dataset_id, seed, n_splits, cv_split, model_name) 
         )'''
 
 insert_chull_stmt = '''INSERT INTO CHULL_STATS(
-        dataset_id, dataset_name, seed, n_splits, cv_split,
+        dataset_id, dataset_name, seed, n_splits, cv_split, model_name,
         n_samples, n_features, n_classes,
         intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise,
         sample_avg_distance, sample_std_distance, 
         levene_stat, levene_pvalue, levene_success, feature_avg_correlation, 
         feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
         in_hull_ratio, out_hull_ratio, samples_out_hull_indexes,
-        imbalance_ratio_train, imbalance_ratio_test, imbalance_ratio_in_hull, imbalance_ratio_out_hull)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+        imbalance_ratio_train, imbalance_ratio_test, imbalance_ratio_in_hull, imbalance_ratio_out_hull,
+        predictor_dumped, train_index_dumped, test_index_dumped, in_indexes_dumped, out_indexes_dumped,
+        y_train_dumped, y_train_pred_dumped, y_test_dumped, y_test_pred_dumped)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
 query_chull_stmt = '''SELECT * FROM CHULL_STATS
-                      WHERE dataset_id=? AND seed=? AND n_splits=? AND cv_split=?'''
+                      WHERE dataset_id=? AND seed=? AND n_splits=? AND cv_split=? AND model_name=?'''
 
 # create_model_chull_stmt = '''CREATE TABLE IF NOT EXISTS MODEL_CHULL(
 #         id INTEGER PRIMARY KEY,

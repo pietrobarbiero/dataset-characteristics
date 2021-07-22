@@ -53,7 +53,8 @@ from .db_config import create_chull_stmt, insert_chull_stmt, query_chull_stmt
 
 
 def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, random_state,
-                      n_splits, split_idx, data_set_id, data_set_name):
+                      n_splits, split_idx, data_set_id, data_set_name,
+                      train_index, test_index):
     db_name = os.path.join(model.database, "database.sqlite")
     scaled_data = False
     test_accuracy_in_hull = -1
@@ -62,7 +63,7 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
     test_f1_out_hull = -1
 
     # fetch stats from chull_stats table
-    query = (data_set_id, random_state, n_splits, split_idx)
+    query = (data_set_id, random_state, n_splits, split_idx, model.__class__.__name__)
     chull_stats = lg.database._load_from_db(db_name, query, create_chull_stmt, query_chull_stmt)
     chull_id = chull_stats[0] if chull_stats is not None else chull_stats
 
@@ -127,15 +128,38 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
         if len(y_out_hull) > 0:
             imbalance_ratio_out_hull = class_stats(y_out_hull)
 
+        # fit model & predict
+        logging.info("Split: %d - Fitting classifier..." % split_idx)
+        model.fit(X_train, y_train)
+        logging.info("Split: %d - Classifier fitted!" % split_idx)
+
+        logging.info("Split: %d - Computing predictions..." % split_idx)
+        # predictions
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+
+        # save predictor and predictions
+        predictor_dumped = pickle.dumps(model, protocol=2)
+        train_index_dumped = pickle.dumps(train_index, protocol=2)
+        test_index_dumped = pickle.dumps(test_index, protocol=2)
+        in_indexes_dumped = pickle.dumps(in_indexes, protocol=2)
+        out_indexes_dumped = pickle.dumps(out_indexes, protocol=2)
+        y_train_dumped = pickle.dumps(y_train, protocol=2)
+        y_train_pred_dumped = pickle.dumps(y_train_pred, protocol=2)
+        y_test_dumped = pickle.dumps(y_test, protocol=2)
+        y_test_pred_dumped = pickle.dumps(y_test_pred, protocol=2)
+
         entry = (
-            data_set_id, data_set_name, random_state, n_splits, split_idx,
+            data_set_id, data_set_name, random_state, n_splits, split_idx, model.__class__.__name__,
             n_samples, n_features, n_classes,
             intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise,
             sample_avg_distance, sample_std_distance,
             levene_stat, levene_pvalue, levene_success, feature_avg_correlation,
             feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
             in_hull_ratio, out_hull_ratio, samples_out_hull_indexes,
-            imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull
+            imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull,
+            predictor_dumped, train_index_dumped, test_index_dumped, in_indexes_dumped, out_indexes_dumped,
+            y_train_dumped, y_train_pred_dumped, y_test_dumped, y_test_pred_dumped
         )
 
         chull_stats = lg.database._save_to_db(db_name, entry, query,
@@ -148,32 +172,44 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
         # except TypeError:
         #     print(traceback.format_exc())
 
-    # unpack convex-hull stats
-    _, _, _, _, _, _, \
-    n_samples, n_features, n_classes, \
-    intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise, \
-    sample_avg_distance, sample_std_distance, \
-    levene_stat, levene_pvalue, levene_success, feature_avg_correlation, \
-    feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information, \
-    in_hull_ratio, out_hull_ratio, out_indexes, \
-    imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull = chull_stats
-    out_indexes = pickle.loads(out_indexes)
+    else:
+        # unpack convex-hull stats
+        _, _, _, _, _, _, _, \
+        n_samples, n_features, n_classes, \
+        intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise, \
+        sample_avg_distance, sample_std_distance, \
+        levene_stat, levene_pvalue, levene_success, feature_avg_correlation, \
+        feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information, \
+        in_hull_ratio, out_hull_ratio, out_indexes, \
+        imbalance_ratio_train, imbalance_ratio_val, imbalance_ratio_in_hull, imbalance_ratio_out_hull, \
+        _, _, _, _, _, _, _, _, _ = chull_stats
+        out_indexes = pickle.loads(out_indexes)
 
-    # rescale data
-    if not scaled_data:
-        scaler = StandardScaler()
-        ss = scaler.fit(X_train)
-        X_train_scaled = ss.transform(X_train)
-        X_test_scaled = ss.transform(X_test)
-        X_train_scaled = pd.DataFrame(X_train_scaled)
-        X_test_scaled = pd.DataFrame(X_test_scaled)
-        X_train_scaled.index = X_train.index
-        X_test_scaled.index = X_test.index
-        X_train_scaled.columns = X_train.columns
-        X_test_scaled.columns = X_test.columns
-        X_train = X_train_scaled
-        X_test = X_test_scaled
-        scaled_data = True
+        # rescale data
+        if not scaled_data:
+            scaler = StandardScaler()
+            ss = scaler.fit(X_train)
+            X_train_scaled = ss.transform(X_train)
+            X_test_scaled = ss.transform(X_test)
+            X_train_scaled = pd.DataFrame(X_train_scaled)
+            X_test_scaled = pd.DataFrame(X_test_scaled)
+            X_train_scaled.index = X_train.index
+            X_test_scaled.index = X_test.index
+            X_train_scaled.columns = X_train.columns
+            X_test_scaled.columns = X_test.columns
+            X_train = X_train_scaled
+            X_test = X_test_scaled
+            scaled_data = True
+
+        # fit model & predict
+        logging.info("Split: %d - Fitting classifier..." % split_idx)
+        model.fit(X_train, y_train)
+        logging.info("Split: %d - Classifier fitted!" % split_idx)
+
+        logging.info("Split: %d - Computing predictions..." % split_idx)
+        # predictions
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
 
     # convex hull indexes
     in_indexes = [not i for i in out_indexes]
@@ -181,16 +217,6 @@ def convex_hull_stats(model: LazyPipeline, X_train, y_train, X_test, y_test, ran
     y_in_hull = y_test[in_indexes]
     X_out_hull = X_test.iloc[out_indexes]
     y_out_hull = y_test[out_indexes]
-
-    # fit model & predict
-    logging.info("Split: %d - Fitting classifier..." % split_idx)
-    model.fit(X_train, y_train)
-    logging.info("Split: %d - Classifier fitted!" % split_idx)
-
-    logging.info("Split: %d - Computing predictions..." % split_idx)
-    # predictions
-    y_train_pred = model.predict(X_train)
-    y_test_pred = model.predict(X_test)
 
     # scores
     train_accuracy = accuracy_score(y_train, y_train_pred)
@@ -262,7 +288,8 @@ def cross_validation(classifier, X, y, train_index, test_index,
 
     model = copy.deepcopy(classifier)
     scores = convex_hull_stats(model, X_train, y_train, X_test, y_test, random_state,
-                               n_splits, split_idx, data_set_id, data_set_name)
+                               n_splits, split_idx, data_set_id, data_set_name,
+                               train_index, test_index)
 
     logging.info("Finished work on split: %d" % split_idx)
 
@@ -276,9 +303,9 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
         db_name = os.path.join("database", data_set_name)
     if not classifiers:
         classifiers = [
-            LazyPipeline([("RandomForestClassifier", RandomForestClassifier())], database=db_name),
-            LazyPipeline([("LogisticRegression", LogisticRegression())], database=db_name),
-            LazyPipeline([("SVC", SVC())], database=db_name),
+            LazyPipeline([("RandomForestClassifier", RandomForestClassifier(random_state=random_state))], database=db_name),
+            LazyPipeline([("LogisticRegression", LogisticRegression(random_state=random_state))], database=db_name),
+            LazyPipeline([("SVC", SVC(random_state=random_state))], database=db_name),
         ]
 
     chull_stats = pd.DataFrame()
