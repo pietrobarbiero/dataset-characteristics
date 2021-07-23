@@ -33,6 +33,7 @@ from sklearn import clone
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import cross_validate, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import KNNImputer
 import pickle
 import copy
 import numpy as np
@@ -300,8 +301,10 @@ def cross_validation(classifier, X, y, train_index, test_index,
 def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: List = None, db_name: str = None,
                           n_splits: int = 10, random_state: int = 42):
     if not db_name:
+        print(data_set_name)
         db_name = os.path.join("database", data_set_name)
     if not classifiers:
+        # TODO add the hyperparameter optimization stuff here
         classifiers = [
             LazyPipeline([("RandomForestClassifier", RandomForestClassifier(random_state=random_state))], database=db_name),
             LazyPipeline([("LogisticRegression", LogisticRegression(random_state=random_state))], database=db_name),
@@ -310,9 +313,12 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
 
     chull_stats = pd.DataFrame()
 
-    # load data
+    # load data, and use KNN imputation to fill missing values
+    imputer = KNNImputer(n_neighbors=5, weights="uniform")
     X, y, n_classes = lg.datasets.load_openml_dataset(data_id=data_set_id, dataset_name=data_set_name)
+    X = imputer.fit_transform(X)
     X = pd.DataFrame(X)
+
 
     logging.info("%s has %d samples and %d features" % (data_set_name, X.shape[0], X.shape[1]))
 

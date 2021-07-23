@@ -17,12 +17,17 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import lazygrid as lg
-import convex_hull_stats
-import sys
 import linecache
-import os
-import tracemalloc
 import logging
+import numpy as np
+import openml
+import pandas as pd
+import os
+import sys
+import tracemalloc
+
+# local modules
+import convex_hull_stats
 
 
 def display_top(snapshot, key_type='lineno', limit=10):
@@ -65,9 +70,42 @@ def main():
                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                         datefmt='%H:%M:%S',
                         level=logging.DEBUG)
+    
+    # instead of fetching all datasets, we get all datasets from OpenML-CC18, but some have missing values; 
+    # the pre-processing is performed in convex_hull_stats.dataset_stats.py 
+    #df_datasets = lg.datasets.fetch_datasets(task="classification", min_classes=2, max_features=4000, update_data=True)
 
-    datasets = lg.datasets.fetch_datasets(task="classification", min_classes=2, max_features=4000, update_data=True)
-    convex_hull_stats.openml_stats_all(datasets)
+    logging.info("Loading benchmark suite OpenML-CC18...")
+    benchmark_suite = openml.study.get_suite('OpenML-CC18')
+
+    # unfortunately, the datasets have to be arranged in a pd.Dataframe,
+    # otherwise the rest of the code starts crying. It's Pietro's fault.
+    # blame him, not me
+    dataset_dictionary = {
+            "name" : [],
+            "did" : [],
+            "n_samples" : [],
+            "n_features" : [],
+            "n_classes" : []
+            }
+    
+    for task_id in benchmark_suite.tasks :
+        task = openml.tasks.get_task(task_id)
+        X, y = task.get_X_and_y()
+        dataset = task.get_dataset()
+
+        dataset_dictionary["name"].append(dataset.name)
+        dataset_dictionary["did"].append(dataset.dataset_id)
+        dataset_dictionary["n_samples"].append(X.shape[0])
+        dataset_dictionary["n_features"].append(X.shape[1])
+        dataset_dictionary["n_classes"].append(len(np.unique(y)))
+
+    # create dataframe
+    print(dataset_dictionary)
+    df_datasets = pd.DataFrame.from_dict(dataset_dictionary)
+
+    # finally launch the code
+    convex_hull_stats.openml_stats_all(df_datasets)
 
     # snapshot = tracemalloc.take_snapshot()
     #
