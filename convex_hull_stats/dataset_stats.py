@@ -314,9 +314,9 @@ def openml_data_set_stats(data_set_id: int, data_set_name: str, classifiers: Lis
     chull_stats = pd.DataFrame()
 
     # load data, and use KNN imputation to fill missing values
-    imputer = KNNImputer(n_neighbors=5, weights="uniform")
+    #imputer = KNNImputer(n_neighbors=5, weights="uniform")
     X, y, n_classes = lg.datasets.load_openml_dataset(data_id=data_set_id, dataset_name=data_set_name)
-    X = imputer.fit_transform(X)
+    #X = imputer.fit_transform(X)
     X = pd.DataFrame(X)
 
 

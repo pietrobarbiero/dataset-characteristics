@@ -103,6 +103,7 @@ def main():
     # create dataframe
     print(dataset_dictionary)
     df_datasets = pd.DataFrame.from_dict(dataset_dictionary)
+    df_datasets = df_datasets.set_index("name")
 
     # finally launch the code
     convex_hull_stats.openml_stats_all(df_datasets)
