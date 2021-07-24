@@ -18,17 +18,20 @@
 
 import unittest
 
+from sklearn.datasets import load_iris
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+
 
 class TestDatasetStats(unittest.TestCase):
 
     def test_main(self):
 
-        import lazygrid as lg
         import convex_hull_stats
 
-        datasets = lg.datasets.fetch_datasets(task="classification", min_classes=1, max_samples=300, max_features=6)
-
-        convex_hull_stats.openml_stats_all(datasets)
+        X, y = load_iris(return_X_y=True)
+        classifiers = [Pipeline([("LogisticRegression", LogisticRegression(random_state=42))])]
+        convex_hull_stats.compute_dataset_stats(X, y, classifiers)
 
         print()
 

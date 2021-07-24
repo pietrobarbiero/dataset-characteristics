@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import lazygrid as lg
 import linecache
 import logging
 import numpy as np
@@ -27,6 +26,11 @@ import sys
 import tracemalloc
 
 # local modules
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
+
 import convex_hull_stats
 
 
@@ -78,35 +82,14 @@ def main():
     logging.info("Loading benchmark suite OpenML-CC18...")
     benchmark_suite = openml.study.get_suite('OpenML-CC18')
 
-    # unfortunately, the datasets have to be arranged in a pd.Dataframe,
-    # otherwise the rest of the code starts crying. It's Pietro's fault.
-    # blame him, not me
-    dataset_dictionary = {
-            "name" : [],
-            "did" : [],
-            "n_samples" : [],
-            "n_features" : [],
-            "n_classes" : []
-            }
-    
-    for task_id in benchmark_suite.tasks :
-        task = openml.tasks.get_task(task_id)
-        X, y = task.get_X_and_y()
-        dataset = task.get_dataset()
+    random_state = 42
+    classifiers = [
+        # Pipeline([("RandomForestClassifier", RandomForestClassifier(random_state=random_state))]),
+        Pipeline([("LogisticRegression", LogisticRegression(random_state=random_state))]),
+        # Pipeline([("SVC", SVC(random_state=random_state))]),
+    ]
 
-        dataset_dictionary["name"].append(dataset.name)
-        dataset_dictionary["did"].append(dataset.dataset_id)
-        dataset_dictionary["n_samples"].append(X.shape[0])
-        dataset_dictionary["n_features"].append(X.shape[1])
-        dataset_dictionary["n_classes"].append(len(np.unique(y)))
-
-    # create dataframe
-    print(dataset_dictionary)
-    df_datasets = pd.DataFrame.from_dict(dataset_dictionary)
-    df_datasets = df_datasets.set_index("name")
-
-    # finally launch the code
-    convex_hull_stats.openml_stats_all(df_datasets)
+    convex_hull_stats.openml_stats_all(benchmark_suite, classifiers, n_splits=10)
 
     # snapshot = tracemalloc.take_snapshot()
     #
