@@ -37,7 +37,7 @@ from .convex_hull_tests import convex_combination_test
 
 def cross_validation(classifier, X, y, train_index, test_index,
                      random_state, n_splits, split_idx, task_id, dataset_name, result_dir):
-    logging.info("Staring work on split: %d" % split_idx)
+    logging.info("Starting work on split: %d" % split_idx)
 
     # extract train and test data
     X_train, y_train = X[train_index], y[train_index]
@@ -52,8 +52,8 @@ def cross_validation(classifier, X, y, train_index, test_index,
 
     # directories
     model_name = classifier.steps[-1][1].__class__.__name__
-    result_chull_dir = f'{result_dir}/{dataset_name}/{n_splits}/{split_idx}'
-    result_model_dir = f'{result_dir}/{dataset_name}/{n_splits}/{split_idx}/{model_name}'
+    result_chull_dir = f'{result_dir}/{dataset_name}/{n_splits}-fold-cv/{split_idx}'
+    result_model_dir = f'{result_dir}/{dataset_name}/{n_splits}-fold-cv/{split_idx}/{model_name}'
     os.makedirs(result_model_dir, exist_ok=True)
 
     done_chull_filename = f'{result_chull_dir}/chull.done'
@@ -66,10 +66,10 @@ def cross_validation(classifier, X, y, train_index, test_index,
         logging.info("Split: %d - Convex hull computed!" % split_idx)
 
         logging.info("Split: %d - Saving convex hull results..." % split_idx)
-        pd.DataFrame(out_indexes).to_csv(f'{result_chull_dir}/out_indexes.csv')
-        (~pd.DataFrame(out_indexes)).to_csv(f'{result_chull_dir}/in_indexes.csv')
-        pd.DataFrame(train_index).to_csv(f'{result_chull_dir}/train_indexes.csv')
-        pd.DataFrame(test_index).to_csv(f'{result_chull_dir}/test_indexes.csv')
+        pd.DataFrame(out_indexes, columns=["index"]).to_csv(f'{result_chull_dir}/out_indexes.csv', index=False)
+        (~pd.DataFrame(out_indexes, columns=["index"])).to_csv(f'{result_chull_dir}/in_indexes.csv', index=False)
+        pd.DataFrame(train_index, columns=["index"]).to_csv(f'{result_chull_dir}/train_indexes.csv', index=False)
+        pd.DataFrame(test_index, columns=["index"]).to_csv(f'{result_chull_dir}/test_indexes.csv', index=False)
         logging.info("Split: %d - Convex hull results saved!" % split_idx)
 
         open(done_chull_filename, 'w').close()
@@ -90,10 +90,10 @@ def cross_validation(classifier, X, y, train_index, test_index,
 
         logging.info("Split: %d - Saving model results..." % split_idx)
         joblib.dump(model, f'{result_model_dir}/{model_name}.joblib')
-        pd.DataFrame(y_train).to_csv(f'{result_chull_dir}/y_train.csv')
-        pd.DataFrame(y_test).to_csv(f'{result_chull_dir}/y_test.csv')
-        pd.DataFrame(y_train_pred).to_csv(f'{result_model_dir}/y_train_pred.csv')
-        pd.DataFrame(y_test_pred).to_csv(f'{result_model_dir}/y_test_pred.csv')
+        pd.DataFrame(y_train, columns=["class_label"]).to_csv(f'{result_chull_dir}/y_train.csv', index=False)
+        pd.DataFrame(y_test, columns=["class_label"]).to_csv(f'{result_chull_dir}/y_test.csv', index=False)
+        pd.DataFrame(y_train_pred, columns=["class_label"]).to_csv(f'{result_model_dir}/y_train_pred.csv', index=False)
+        pd.DataFrame(y_test_pred, columns=["class_label"]).to_csv(f'{result_model_dir}/y_test_pred.csv', index=False)
         logging.info("Split: %d - Model results saved!" % split_idx)
 
         open(done_model_filename, 'w').close()
