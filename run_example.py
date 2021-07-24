@@ -84,7 +84,7 @@ def main():
 
     random_state = 42
     classifiers = [
-        # Pipeline([("RandomForestClassifier", RandomForestClassifier(random_state=random_state))]),
+        Pipeline([("RandomForestClassifier", RandomForestClassifier(random_state=random_state))]),
         Pipeline([("LogisticRegression", LogisticRegression(random_state=random_state))]),
         # Pipeline([("SVC", SVC(random_state=random_state))]),
     ]

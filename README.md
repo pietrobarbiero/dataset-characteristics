@@ -4,6 +4,7 @@ Scripts to generate all the data and figures used in the paper "Generalization i
 
 ## Future works
 
-1. Re-run experiments on the [OpenML-CC18](https://docs.openml.org/benchmark/#list-of-benchmarking-suites) benchmark suite.
-2. Perform hyperparameter optimization using GridSearchCV (or similar).
+1. Perform hyperparameter optimization using GridSearchCV (or similar).
+2. Check if values are missing, use imputation.
+3. Sort tasks by number of samples.
 

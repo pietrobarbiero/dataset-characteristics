@@ -118,18 +118,18 @@ def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, resul
             splits = np.arange(n_splits)
 
             # slow (for debugging ONLY)
-            for (train_index, test_index), split_idx in zip(cv.split(X, y), splits):
-                cross_validation(copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
-                                 n_splits, split_idx, task_id, dataset_name, result_dir)
+            #for (train_index, test_index), split_idx in zip(cv.split(X, y), splits):
+            #    cross_validation(copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
+            #                     n_splits, split_idx, task_id, dataset_name, result_dir)
 
-            # # We clone the estimator to make sure that all the folds are
-            # # independent, and that it is pickle-able.
-            # parallel = Parallel(n_jobs=n_splits, prefer="threads")
-            # scores = parallel(
-            #     delayed(cross_validation)(
-            #         copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
-            #         n_splits, split_idx, task_id, dataset_name, result_dir)
-            #     for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
+            # We clone the estimator to make sure that all the folds are
+            # independent, and that it is pickle-able.
+            parallel = joblib.Parallel(n_jobs=n_splits, prefer="threads")
+            scores = parallel(
+                joblib.delayed(cross_validation)(
+                    copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
+                    n_splits, split_idx, task_id, dataset_name, result_dir)
+                for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
 
         except:
             logging.exception(": data set (%d, %s)" % (task_id, dataset_name))
