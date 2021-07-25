@@ -35,7 +35,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from .convex_hull_tests import convex_combination_test
 
-def cross_validation(classifier, X, y, train_index, test_index,
+def cross_validation(classifier, model_name, X, y, train_index, test_index,
                      random_state, n_splits, split_idx, task_id, dataset_name, result_dir):
     logging.info("Starting work on split: %d" % split_idx)
 
@@ -46,14 +46,13 @@ def cross_validation(classifier, X, y, train_index, test_index,
 
     # data preprocessing
     scaler = StandardScaler()
-    ss = scaler.fit(X_train)
-    X_train_scaled = ss.transform(X_train)
-    X_test_scaled = ss.transform(X_test)
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-    # directories
-    model_name = classifier.steps[-1][1].__class__.__name__
-    result_chull_dir = f'{result_dir}/{dataset_name}/{n_splits}-fold-cv/{split_idx}'
-    result_model_dir = f'{result_dir}/{dataset_name}/{n_splits}-fold-cv/{split_idx}/{model_name}'
+    # create directories
+    #model_name = classifier.steps[-1][1].__class__.__name__
+    result_chull_dir = f'{result_dir}/{dataset_name}/{n_splits}-fold-cv/fold-{split_idx}'
+    result_model_dir = f'{result_dir}/{dataset_name}/{n_splits}-fold-cv/fold-{split_idx}/{model_name}'
     os.makedirs(result_model_dir, exist_ok=True)
 
     done_chull_filename = f'{result_chull_dir}/chull.done'
@@ -108,9 +107,9 @@ def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, resul
                           task_id: int = None, dataset_name: str = None):
     logging.info("%s has %d samples and %d features" % (dataset_name, X.shape[0], X.shape[1]))
 
-    for classifier in classifiers:
+    for model_name, classifier in classifiers.items():
 
-        model_name = str([estimator.__class__.__name__ for _, estimator in classifier.steps])
+        #model_name = str([estimator.__class__.__name__ for _, estimator in classifier.steps])
         logging.info("Starting analysis using classifier: %s" % model_name)
 
         try:
@@ -127,7 +126,7 @@ def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, resul
             parallel = joblib.Parallel(n_jobs=n_splits, prefer="threads")
             scores = parallel(
                 joblib.delayed(cross_validation)(
-                    copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
+                    copy.deepcopy(classifier), model_name, X, y, train_index, test_index, random_state,
                     n_splits, split_idx, task_id, dataset_name, result_dir)
                 for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
 
@@ -139,7 +138,7 @@ def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, resul
     return
 
 
-def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: List,
+def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
                      n_splits: int, result_dir: str = "./results"):
     # create output folder
     os.makedirs(result_dir, exist_ok=True)

@@ -76,18 +76,27 @@ def main():
                         level=logging.DEBUG)
     
     # instead of fetching all datasets, we get all datasets from OpenML-CC18, but some have missing values; 
-    # the pre-processing is performed in convex_hull_stats.dataset_stats.py 
+    # the pre-processing will be performed in convex_hull_stats.dataset_stats.py 
     #df_datasets = lg.datasets.fetch_datasets(task="classification", min_classes=2, max_features=4000, update_data=True)
 
     logging.info("Loading benchmark suite OpenML-CC18...")
     benchmark_suite = openml.study.get_suite('OpenML-CC18')
-
     random_state = 42
-    classifiers = [
-        Pipeline([("RandomForestClassifier", RandomForestClassifier(random_state=random_state))]),
-        Pipeline([("LogisticRegression", LogisticRegression(random_state=random_state))]),
-        # Pipeline([("SVC", SVC(random_state=random_state))]),
-    ]
+    classifiers = dict()
+
+    # let's create pipelines for classifiers that also include hyperparameter tuning
+    from sklearn.experimental import enable_halving_search_cv
+    from sklearn.model_selection import HalvingGridSearchCV
+
+    rf_parameter_grid = {
+        'n_estimators': [10, 20, 30, 50, 100, 200, 300],
+        'max_features': ['auto', 'sqrt', 'log2'],
+        'max_depth' : [4, 5, 6, 7, 8, None],
+        'criterion' :['gini', 'entropy']
+        }
+
+    classifiers["RandomForestHT"] = HalvingGridSearchCV(RandomForestClassifier(random_state=random_state), rf_parameter_grid)
+    classifiers["RandomForest"] = RandomForestClassifier(random_state=random_state)
 
     convex_hull_stats.openml_stats_all(benchmark_suite, classifiers, n_splits=10)
 
