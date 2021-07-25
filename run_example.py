@@ -94,9 +94,25 @@ def main():
         'max_depth' : [4, 5, 6, 7, 8, None],
         'criterion' :['gini', 'entropy']
         }
-
     classifiers["RandomForestHT"] = HalvingGridSearchCV(RandomForestClassifier(random_state=random_state), rf_parameter_grid)
     classifiers["RandomForest"] = RandomForestClassifier(random_state=random_state)
+
+    svc_param_grid = {
+        'C': [0.1, 1.0, 10, 100, 1000],
+        'kernel': ['poly'],
+        'degree': [2, 3, 4, 5],
+        'gamma': [1e-3, 1e-4, 'scale'],
+        'coef0': [0.0, 1.0, 10.0],
+        }
+    classifiers["SVCHT"] = HalvingGridSearchCV(SVC(random_state=random_state), svc_parameter_grid)
+    classifiers["SVC"] = SVC(kernel='poly', random_state=random_state)
+
+    lr_param_grid = {
+        'C' : np.logspace(-3,3,7),
+        'penalty' : ['l1', 'l2'],
+        }
+    classifiers["LogisticRegressionHT"] = HalvingGridSearchCV(LogisticRegression(random_state=random_state), lr_parameter_grid)
+    classifiers["LogisticRegression"] = LogisticRegression(random_state=random_state)
 
     convex_hull_stats.openml_stats_all(benchmark_suite, classifiers, n_splits=10)
 

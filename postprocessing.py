@@ -80,7 +80,7 @@ def main() :
             fold_folders = [ f.path for f in os.scandir(cv_folder) if f.is_dir() ]
 
             for fold_folder in fold_folders :
-                fold_number = int(re.search("([0-9]+)", fold_folder).group(1))
+                fold_number = int(re.search("([0-9]+)", os.path.basename(fold_folder)).group(1))
 
                 # read some information, to be used later
                 df_test = pd.read_csv(os.path.join(fold_folder, "y_test.csv"))
@@ -99,9 +99,18 @@ def main() :
                     y_pred_test = df_pred_test["class_label"].values
 
                     # create local dictionary of metrics, using a list of function pointers!
+                    # update: it works poorly, because some metrics need special values for their arguments in specific cases
                     from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
-                    metrics = [accuracy_score, f1_score, matthews_corrcoef]
-                    metrics_dict = { m.__name__ : m(y_test, y_pred_test) for m in metrics }
+                    #metrics = [accuracy_score, f1_score, matthews_corrcoef]
+                    #metrics_dict = { m.__name__ : m(y_test, y_pred_test) for m in metrics }
+                    metrics_dict = dict()
+                    metrics_dict[accuracy_score.__name__] = accuracy_score(y_test, y_pred_test)
+                    metrics_dict[matthews_corrcoef.__name__] = matthews_corrcoef(y_test, y_pred_test)
+
+                    if len(np.unique(y_test)) == 2 :
+                        metrics_dict[f1_score.__name__] = f1_score(y_test, y_pred_test)
+                    else :
+                        metrics_dict[f1_score.__name__] = f1_score(y_test, y_pred_test, average='weighted')
 
                     # store performance, as a dictionary (classifier) of dictionaries (metrics) of lists (performance per fold)
                     if classifier_name not in performance : performance[classifier_name] = dict()
