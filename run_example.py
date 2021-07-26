@@ -97,7 +97,7 @@ def main():
     classifiers["RandomForestHT"] = HalvingGridSearchCV(RandomForestClassifier(random_state=random_state), rf_parameter_grid)
     classifiers["RandomForest"] = RandomForestClassifier(random_state=random_state)
 
-    svc_param_grid = {
+    svc_parameter_grid = {
         'C': [0.1, 1.0, 10, 100, 1000],
         'kernel': ['poly'],
         'degree': [2, 3, 4, 5],
@@ -107,7 +107,7 @@ def main():
     classifiers["SVCHT"] = HalvingGridSearchCV(SVC(random_state=random_state), svc_parameter_grid)
     classifiers["SVC"] = SVC(kernel='poly', random_state=random_state)
 
-    lr_param_grid = {
+    lr_parameter_grid = {
         'C' : np.logspace(-3,3,7),
         'penalty' : ['l1', 'l2'],
         }
