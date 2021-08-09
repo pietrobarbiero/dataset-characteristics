@@ -71,16 +71,18 @@ def main() :
         dataset_name = os.path.basename(dataset_folder)
         print("Now analyzing folder for dataset \"%s\"..." % dataset_name)
 
+        # setup global data structure
+        if "dataset" not in stats : stats["dataset"] = []
+        stats["dataset"].append(dataset_name)
+
         # get the list of cross-validation experiments
         cv_folders = [ f.path for f in os.scandir(dataset_folder) if f.is_dir() ]
 
         for cv_folder in cv_folders :
             print("Now analyzing folder for \"%s\" for dataset \"%s\"..." % (os.path.basename(cv_folder), dataset_name))
 
-            # prepare local data structure and setup global data structure
+            # prepare local data structure
             performance = dict()
-            if "dataset" not in stats : stats["dataset"] = []
-            stats["dataset"].append(dataset_name)
 
             # let's start collecting information from each fold
             fold_folders = [ f.path for f in os.scandir(cv_folder) if f.is_dir() ]
