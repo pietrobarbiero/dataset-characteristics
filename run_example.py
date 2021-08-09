@@ -104,8 +104,8 @@ def main():
         'gamma': [1e-3, 1e-4, 'scale'],
         'coef0': [0.0, 1.0, 10.0],
         }
-    classifiers["SVCHT"] = HalvingGridSearchCV(SVC(random_state=random_state), svc_parameter_grid, random_state=random_state)
-    classifiers["SVC"] = SVC(kernel='poly', random_state=random_state)
+    #classifiers["SVCHT"] = HalvingGridSearchCV(SVC(random_state=random_state), svc_parameter_grid, random_state=random_state)
+    #classifiers["SVC"] = SVC(kernel='poly', random_state=random_state)
 
     lr_parameter_grid = {
         'C' : np.logspace(-3,3,7),
