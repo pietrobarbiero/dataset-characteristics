@@ -7,6 +7,8 @@ import pandas as pd
 import re
 import sys
 
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
+
 def is_experiment_complete(dataset_folder) :
     """
     Given a folder corresponding to a dataset, this function just checks for the presence of all files indicating completeness of results.
@@ -58,6 +60,13 @@ def main() :
     output_file = "results.csv"
     stats = dict()
 
+    # the list of metric names is hard-coded here, and should be changed if we decide to use other stuff
+    metric_names = [
+        accuracy_score.__name__,
+        matthews_corrcoef.__name__,
+        f1_score.__name__,
+            ]
+
     # get list of folders (corresponding to each dataset)
     dataset_folders = [ f.path for f in os.scandir(result_folder) if f.is_dir() ]
     print("Found a total of %d dataset folders!" % len(dataset_folders))
@@ -65,6 +74,15 @@ def main() :
     # filter out folders for which computation is incomplete, using is_experiment_complete
     dataset_folders = [ d for d in dataset_folders if is_experiment_complete(d) ]
     print("Of which, %d correspond to completed experiments." % len(dataset_folders))
+
+    # let's get a list of all ML algorithms used among all folders; they correspond to the sub-folder names
+    ml_algorithm_names = []
+    for d in dataset_folders : # for each dataset folder
+        for v in [ f.path for f in os.scandir(d) if f.is_dir() ] : # for each N-fold cross-validation
+            for fold in [ f.path for f in os.scandir(v) if f.is_dir() ] : # for each fold
+                ml_algorithm_names.extend( [ f.name for f in os.scandir(fold) if f.is_dir() ] )
+    ml_algorithm_names = sorted(list(set(ml_algorithm_names)))
+    print("Here is the list of all ML algorithms appearing at least once in the folders:", ml_algorithm_names)
 
     # right now it's not really post-processing, it's just a comparison between the different classifiers
     for dataset_folder in dataset_folders :
@@ -108,9 +126,6 @@ def main() :
 
                     # create local dictionary of metrics, using a list of function pointers!
                     # update: it works poorly, because some metrics need special values for their arguments in specific cases
-                    from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
-                    #metrics = [accuracy_score, f1_score, matthews_corrcoef]
-                    #metrics_dict = { m.__name__ : m(y_test, y_pred_test) for m in metrics }
                     metrics_dict = dict()
                     metrics_dict[accuracy_score.__name__] = accuracy_score(y_test, y_pred_test)
                     metrics_dict[matthews_corrcoef.__name__] = matthews_corrcoef(y_test, y_pred_test)
@@ -127,6 +142,7 @@ def main() :
                         performance[classifier_name][metric_name].append(metric_performance) 
             
         # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
+        keys_found = []
         for classifier_name, classifier_metrics in performance.items() :
             for metric_name, metric_performance in classifier_metrics.items() :
                 c_mean = np.mean(metric_performance)
@@ -140,6 +156,21 @@ def main() :
                 if key_name_std not in stats : stats[key_name_std] = []
                 stats[key_name_mean].append(c_mean)
                 stats[key_name_std].append(c_std)
+
+                # record that we had stats for this particular combination of metric and classifier
+                keys_found.append(metric_name + " " + classifier_name)
+
+        # here, we must check whether there are all results for all metrics and all classifiers; if that is
+        # not the case, we add other 'None' values for everything in the lists
+        for classifier_name in ml_algorithm_names :
+            for metric_name in metric_names :
+                if metric_name + " " + classifier_name not in keys_found :
+                    key_name_mean = metric_name + " " + classifier_name + " (mean)"
+                    key_name_std = metric_name + " " + classifier_name + " (std)"
+                    if key_name_mean not in stats : stats[key_name_mean] = []
+                    if key_name_std not in stats : stats[key_name_std] = []
+                    stats[key_name_mean].append(None)
+                    stats[key_name_std].append(None)
 
     # sanitize dictionary: if some of the lists are shorter than the longest, remove them
     # this can happen when some of the experiments are not over for some of the classifiers
