@@ -22,6 +22,7 @@ from typing import List
 import joblib
 import openml
 from openml import OpenMLBenchmarkSuite
+from sklearn.impute import KNNImputer
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 import copy
@@ -148,6 +149,11 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
         # get data
         task = openml.tasks.get_task(task_id)
         X, y = task.get_X_and_y()
+
+        if np.any(np.isnan(X).flatten()):
+            imputer = KNNImputer()
+            X = imputer.fit_transform(X)
+
         dataset = task.get_dataset()
 
         progress_bar.set_description("Analysis of data set: %s" % dataset.name)
