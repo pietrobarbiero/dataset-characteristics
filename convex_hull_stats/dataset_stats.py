@@ -151,6 +151,7 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
     progress_bar = tqdm(benchmark_suite.tasks, leave=False, position=0)
     for task_id in benchmark_suite.tasks:
 
+        task = openml.tasks.get_task(task_id)
         dataset = task.get_dataset()
         if dataset.name in datasets_with_issues :
 
@@ -159,7 +160,6 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
         else :
 
             # get data
-            task = openml.tasks.get_task(task_id)
             X, y = task.get_X_and_y()
 
             if np.any(np.isnan(X).flatten()):
