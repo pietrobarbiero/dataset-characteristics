@@ -141,27 +141,38 @@ def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, resul
 
 def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
                      n_splits: int, result_dir: str = "./results"):
+
+    # list of datasets in which we have issues
+    datasets_with_issues = ["mnist_784", "Bioresponse"]
+
     # create output folder
     os.makedirs(result_dir, exist_ok=True)
 
     progress_bar = tqdm(benchmark_suite.tasks, leave=False, position=0)
     for task_id in benchmark_suite.tasks:
-        # get data
-        task = openml.tasks.get_task(task_id)
-        X, y = task.get_X_and_y()
-
-        if np.any(np.isnan(X).flatten()):
-            imputer = KNNImputer()
-            X = imputer.fit_transform(X)
 
         dataset = task.get_dataset()
+        if dataset.name in datasets_with_issues :
 
-        progress_bar.set_description("Analysis of data set: %s" % dataset.name)
-        logging.info("Starting analysis of data set: %s" % dataset.name)
+            logging.info("Dataset \"%s\" has known issues, skipping..." % dataset.name)
 
-        # compute and save stats
-        compute_dataset_stats(X, y, classifiers, result_dir, n_splits, task_id=task_id, dataset_name=dataset.name)
+        else :
 
-        logging.info("Finished analysis of data set: %s" % dataset.name)
+            # get data
+            task = openml.tasks.get_task(task_id)
+            X, y = task.get_X_and_y()
+
+            if np.any(np.isnan(X).flatten()):
+                logging.info("Missing samples in task, calling imputer...")
+                imputer = KNNImputer()
+                X = imputer.fit_transform(X)
+
+            progress_bar.set_description("Analysis of data set: %s" % dataset.name)
+            logging.info("Starting analysis of data set: %s" % dataset.name)
+
+            # compute and save stats
+            compute_dataset_stats(X, y, classifiers, result_dir, n_splits, task_id=task_id, dataset_name=dataset.name)
+
+            logging.info("Finished analysis of data set: %s" % dataset.name)
 
     return
