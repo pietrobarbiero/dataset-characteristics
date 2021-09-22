@@ -79,6 +79,9 @@ def main() :
     dataset_folders = [ f.path for f in os.scandir(result_folder) if f.is_dir() ]
     print("Found a total of %d dataset folders!" % len(dataset_folders))
 
+    dataset_folders_not_complete = [ d for d in dataset_folders if not is_experiment_complete(d) ]
+    print("Incomplete experiments:", dataset_folders_not_complete)
+
     # filter out folders for which computation is incomplete, using is_experiment_complete
     dataset_folders = [ d for d in dataset_folders if is_experiment_complete(d) ]
     print("Of which, %d correspond to completed experiments." % len(dataset_folders))
