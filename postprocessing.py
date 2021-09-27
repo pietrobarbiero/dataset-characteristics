@@ -80,11 +80,11 @@ def main() :
     print("Found a total of %d dataset folders!" % len(dataset_folders))
 
     dataset_folders_not_complete = [ d for d in dataset_folders if not is_experiment_complete(d) ]
-    print("Incomplete experiments:", dataset_folders_not_complete)
+    print("Incomplete experiments: %d %s" % (len(dataset_folders_not_complete), dataset_folders_not_complete))
 
     # filter out folders for which computation is incomplete, using is_experiment_complete
     dataset_folders = [ d for d in dataset_folders if is_experiment_complete(d) ]
-    print("Of which, %d correspond to completed experiments." % len(dataset_folders))
+    print("Complete experiments: %d" % len(dataset_folders))
 
     # let's get a list of all ML algorithms used among all folders; they correspond to the sub-folder names
     ml_algorithm_names = []
@@ -133,12 +133,16 @@ def main() :
 
                 # prepare local data structure
                 performance = dict()
-                datasetstats = dict()
+                dataset_stats = dict()
 
+                # 'distances' should not be included, it's the list of all distances between pairs of samples, it's used for other stuff
+                # (e.g. sample_avg_distance) and introducing it among the stats actually makes everything crash
                 dataset_metrics_name = ['levene_stat', 'levene_pvalue', 'levene_success', 'feature_avg_correlation',
                                    'feature_avg_skew', 'feature_avg_kurtosis', 'feature_avg_mutual_information',
                                    'dimensionality', 'intrinsic_dimensionality', 'intrinsic_dimensionality_ratio',
-                                   'feature_noise', 'distances', 'sample_avg_distance', 'sample_std_distance',
+                                   'feature_noise', 
+                                   #'distances', 
+                                   'sample_avg_distance', 'sample_std_distance',
                                    'imbalance_ratio_in_hull', 'imbalance_ratio_out_hull', 'imbalance_ratio_train',
                                    'imbalance_ratio_val', 'in_hull_ratio', 'out_hull_ratio']
 
@@ -146,6 +150,7 @@ def main() :
                 fold_folders = [ f.path for f in os.scandir(cv_folder) if f.is_dir() ]
 
                 for fold_folder in fold_folders :
+
                     fold_number = int(re.search("([0-9]+)", os.path.basename(fold_folder)).group(1))
 
                     # read some information, to be used later
@@ -198,17 +203,20 @@ def main() :
                     out_hull_ratio = sum(out_indexes) / y_test.shape[0]
                     print("Split: %d - Convex hull computed!" % fold_number)
 
+                    # 'distances' should not be included in the stats, see comments above
                     dataset_metrics = [levene_stat, levene_pvalue, levene_success, feature_avg_correlation,
                                             feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
                                             dimensionality, intrinsic_dimensionality, intrinsic_dimensionality_ratio,
-                                            feature_noise, distances, sample_avg_distance, sample_std_distance,
+                                            feature_noise, 
+                                            #distances, 
+                                            sample_avg_distance, sample_std_distance,
                                             imbalance_ratio_in_hull, imbalance_ratio_out_hull, imbalance_ratio_train,
                                             imbalance_ratio_val, in_hull_ratio, out_hull_ratio]
 
-                    if dataset_name not in datasetstats: datasetstats[dataset_name] = dict()
+                    if dataset_name not in dataset_stats: dataset_stats[dataset_name] = dict()
                     for dataset_metric_name, dataset_metric in zip(dataset_metrics_name, dataset_metrics):
-                        if dataset_metric_name not in datasetstats[dataset_name]: datasetstats[dataset_name][dataset_metric_name] = []
-                        datasetstats[dataset_name][dataset_metric_name].append(dataset_metric)
+                        if dataset_metric_name not in dataset_stats[dataset_name]: dataset_stats[dataset_name][dataset_metric_name] = []
+                        dataset_stats[dataset_name][dataset_metric_name].append(dataset_metric)
 
                     # get the list of folders (here representing different classifiers)
                     classifier_folders = [ f.path for f in os.scandir(fold_folder) if f.is_dir() ]
@@ -232,19 +240,22 @@ def main() :
                         # scores
                         # create local dictionary of metrics, using a list of function pointers!
                         # update: it works poorly, because some metrics need special values for their arguments in specific cases
-                        print("Split: %d - Computing predictions..." % fold_number)
+                        print("Split: %d; Classifier: \"%s\" - Computing predictions..." % (fold_number, classifier_name))
                         test_accuracy_in_hull, test_f1_in_hull, test_mc_in_hull, test_accuracy_out_hull, test_f1_out_hull, test_mc_out_hull = np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
                         if len(y_in_hull) > 0:
                             test_accuracy_in_hull = accuracy_score(y_in_hull, y_pred_in_hull)
                             test_f1_in_hull = f1_score(y_in_hull, y_pred_in_hull, average="weighted")
                             test_mc_in_hull = matthews_corrcoef(y_in_hull, y_pred_in_hull)
+
                         if len(y_out_hull) > 0:
                             test_accuracy_out_hull = accuracy_score(y_out_hull, y_pred_out_hull)
                             test_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
                             test_mc_out_hull = matthews_corrcoef(y_out_hull, y_pred_out_hull)
+
                         metrics_dict = dict()
                         metrics_dict[accuracy_score.__name__] = accuracy_score(y_test, y_pred_test)
                         metrics_dict[matthews_corrcoef.__name__] = matthews_corrcoef(y_test, y_pred_test)
+
                         if len(np.unique(y_test)) == 2 :
                             metrics_dict[f1_score.__name__] = f1_score(y_test, y_pred_test)
                         else :
@@ -252,10 +263,11 @@ def main() :
                         metrics_dict[accuracy_score.__name__ + '_in_hull'] = test_accuracy_in_hull
                         metrics_dict[f1_score.__name__ + '_in_hull'] = test_f1_in_hull
                         metrics_dict[matthews_corrcoef.__name__ + '_in_hull'] = test_mc_in_hull
+
                         metrics_dict[accuracy_score.__name__ + '_out_hull'] = test_accuracy_out_hull
                         metrics_dict[f1_score.__name__ + '_out_hull'] = test_f1_out_hull
                         metrics_dict[matthews_corrcoef.__name__ + '_out_hull'] = test_mc_out_hull
-                        print("Split: %d - Predictions computed!" % fold_number)
+                        print("Split: %d; Classifier: \"%s\" - Predictions computed!" % (fold_number, classifier_name))
 
                         # store performance, as a dictionary (classifier) of dictionaries (metrics) of lists (performance per fold)
                         if classifier_name not in performance : performance[classifier_name] = dict()
@@ -284,8 +296,8 @@ def main() :
 
         # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
         keys_found = []
-        for dataset_name, dataset_metrics in datasetstats.items() :
-            for metric_name, metric_performance in datasetstats.items() :
+        for dataset_name, dataset_metrics in dataset_stats.items() :
+            for metric_name, metric_performance in dataset_metrics.items() :
                 c_mean = np.mean(metric_performance)
                 c_std = np.std(metric_performance)
                 print("Dataset \"%s\", metric \"%s\": mean=%.4f; std=%.4f" % (dataset_name, metric_name, c_mean, c_std))
