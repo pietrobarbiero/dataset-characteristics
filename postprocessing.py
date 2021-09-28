@@ -279,6 +279,7 @@ def main() :
         keys_found = []
         for classifier_name, classifier_metrics in performance.items() :
             for metric_name, metric_performance in classifier_metrics.items() :
+                print("Computing meand and std for \"" + metric_name + "\":", metric_performance)
                 c_mean = np.mean(metric_performance)
                 c_std = np.std(metric_performance)
                 print("Classifier \"%s\", metric \"%s\": mean=%.4f; std=%.4f" % (classifier_name, metric_name, c_mean, c_std))
@@ -295,7 +296,6 @@ def main() :
                 keys_found.append(metric_name + " " + classifier_name)
 
         # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
-        keys_found = []
         for dataset_name, dataset_metrics in dataset_stats.items() :
             for metric_name, metric_performance in dataset_metrics.items() :
                 c_mean = np.mean(metric_performance)
@@ -325,6 +325,35 @@ def main() :
                     stats[key_name_mean].append(None)
                     stats[key_name_std].append(None)
 
+        # update: save partial dictionary, the script crashed with an out-of-memory error,
+        # so it's better to save partial results after every dataset
+
+        # sanitize dictionary: if some of the lists are shorter than the longest, remove them
+        # this can happen when some of the experiments are not over for some of the classifiers
+        print(stats)
+        longest_list_size = 0
+        for key, key_list in stats.items() :
+            if len(key_list) > longest_list_size :
+                longest_list_size = len(key_list)
+
+        keys_to_be_removed = []
+        for key, key_list in stats.items() :
+            if len(key_list) < longest_list_size :
+                keys_to_be_removed.append(key)
+
+        for key in keys_to_be_removed : del stats[key]
+
+        print("Saving statistics to file \"%s\"..." % output_file)
+        df = pd.DataFrame.from_dict(stats)
+        # sort columns by name, EXCEPT 'dataset' that will be placed first
+        sorted_columns = sorted(df.columns)
+        print(sorted_columns)
+        sorted_columns.remove("dataset")
+        sorted_columns = ["dataset"] + sorted_columns
+        df = df.reindex(sorted_columns, axis=1)
+        df.to_csv(output_file, index=False)
+
+    # THIS PART IS REPEATED
     # sanitize dictionary: if some of the lists are shorter than the longest, remove them
     # this can happen when some of the experiments are not over for some of the classifiers
     longest_list_size = 0
