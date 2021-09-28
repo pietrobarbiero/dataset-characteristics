@@ -1,5 +1,5 @@
 """
-Script to perform post-processing of the results.
+Script to perform post-processing of the results. Now cleaned and refactored.
 """
 import math
 import os
@@ -59,17 +59,41 @@ def is_experiment_complete(dataset_folder) :
 
     return True
 
+
 def main() :
+
+    # list of datasets in which we have issues, they will be ignored (at the moment, this information is not used)
+    datasets_with_issues = ["mnist_784", "Bioresponse"]
+
+    # TODO read 'results.csv' (if it exists) and check which datasets have already been processed
+    output_file = "results.csv"
     
     # this is the root folder with all results
     result_folder = "results/"
+    print("Preparing statistics dictionary, reading files in the \"%s\" folder..." % result_folder)
 
-    # and this is the name of the file that will be produced in output, along with the dictionary for the statistics
-    output_file = "results.csv"
+    # dictionary that will contain all the final results
     stats = dict()
+    stats["dataset"] = [] # dataset name
+    stats["cv"] = [] # type of cross-validation (10-fold, 5-fold, ...)
 
-    # the list of metric names is hard-coded here, and should be changed if we decide to use other stuff
-    metric_names = [
+    # the basic idea is that first we are going to find all the names of the columns in the future dataset result
+    # names of the metrics related to the dataset are hard-coded
+    dataset_metrics_names = [   'levene_stat', 'levene_pvalue', 'levene_success', 'feature_avg_correlation',
+                                'feature_avg_skew', 'feature_avg_kurtosis', 'feature_avg_mutual_information',
+                                'dimensionality', 'intrinsic_dimensionality', 'intrinsic_dimensionality_ratio',
+                                'feature_noise', 'sample_avg_distance', 'sample_std_distance',
+                                'imbalance_ratio_in_hull', 'imbalance_ratio_out_hull', 'imbalance_ratio_train',
+                                'imbalance_ratio_val', 'in_hull_ratio', 'out_hull_ratio']
+
+    # add a column to the stats dictionary for each dataset metric, considering mean and std
+    for metric in dataset_metrics_names :
+        stats[metric + " (mean)"] = []
+        stats[metric + " (std)"] = []
+
+    # now, we go through all folders with the results, each folder is a different experiment on a different dataset; depending on the number
+    # of different ML algorithms found, we are going to create the corresponding columns for each metric
+    classifier_metrics_names = [
         accuracy_score.__name__,
         matthews_corrcoef.__name__,
         f1_score.__name__,
@@ -95,23 +119,30 @@ def main() :
     ml_algorithm_names = sorted(list(set(ml_algorithm_names)))
     print("Here is the list of all ML algorithms appearing at least once in the folders:", ml_algorithm_names)
 
+    # add entries to the dictionary for each combination of classifier metric and classifier name
+    for metric_name in classifier_metrics_names :
+        for classifier_name in ml_algorithm_names :
+            for hull in ["", "_in_hull", "_out_hull"] : # three possibilities: regular metric, metric in-hull, metric out-hull
+                stats[metric_name + hull + " " + classifier_name + " (mean)"] = []
+                stats[metric_name + hull + " " + classifier_name + " (std)"] = []
+
+    # before starting to analyze each experiment, we need to load the benchmark suite to compute some stats 
     dataset_names = [os.path.basename(dataset_folder) for dataset_folder in dataset_folders]
 
-    print("Loading benchmark suite OpenML-CC18...")
+    print("Loading benchmark suite \"OpenML-CC18\"...")
     benchmark_suite = openml.study.get_suite('OpenML-CC18')
 
-    # list of datasets in which we have issues
-    datasets_with_issues = ["mnist_784", "Bioresponse"]
-
+    # and here we start the folder-by-folder analysis
     for task_id in benchmark_suite.tasks:
 
         task = openml.tasks.get_task(task_id)
         dataset = task.get_dataset()
+
         if dataset.name in dataset_names :
             dataset_name = dataset.name
             dataset_folder = os.path.join('results', dataset_name)
 
-            # get data
+            # get data, impute missing values
             X, y = task.get_X_and_y()
 
             if np.any(np.isnan(X).flatten()):
@@ -121,30 +152,19 @@ def main() :
 
             print("Now analyzing folder for dataset \"%s\"..." % dataset_name)
 
-            # setup global data structure
-            if "dataset" not in stats : stats["dataset"] = []
-            stats["dataset"].append(dataset_name)
-
             # get the list of cross-validation experiments
             cv_folders = [ f.path for f in os.scandir(dataset_folder) if f.is_dir() ]
 
             for cv_folder in cv_folders :
                 print("Now analyzing folder for \"%s\" for dataset \"%s\"..." % (os.path.basename(cv_folder), dataset_name))
 
-                # prepare local data structure
+                # prepare local data structures
                 performance = dict()
                 dataset_stats = dict()
 
-                # 'distances' should not be included, it's the list of all distances between pairs of samples, it's used for other stuff
-                # (e.g. sample_avg_distance) and introducing it among the stats actually makes everything crash
-                dataset_metrics_name = ['levene_stat', 'levene_pvalue', 'levene_success', 'feature_avg_correlation',
-                                   'feature_avg_skew', 'feature_avg_kurtosis', 'feature_avg_mutual_information',
-                                   'dimensionality', 'intrinsic_dimensionality', 'intrinsic_dimensionality_ratio',
-                                   'feature_noise', 
-                                   #'distances', 
-                                   'sample_avg_distance', 'sample_std_distance',
-                                   'imbalance_ratio_in_hull', 'imbalance_ratio_out_hull', 'imbalance_ratio_train',
-                                   'imbalance_ratio_val', 'in_hull_ratio', 'out_hull_ratio']
+                # add dataset name to the dictionary, with cv folder name
+                stats["dataset"].append(dataset_name)
+                stats["cv"].append(cv_folder)
 
                 # let's start collecting information from each fold
                 fold_folders = [ f.path for f in os.scandir(cv_folder) if f.is_dir() ]
@@ -203,22 +223,20 @@ def main() :
                     out_hull_ratio = sum(out_indexes) / y_test.shape[0]
                     print("Split: %d - Convex hull computed!" % fold_number)
 
-                    # 'distances' should not be included in the stats, see comments above
+                    # dataset metrics are here reported in the same order as the names hard-coded at the beginning of the main
                     dataset_metrics = [levene_stat, levene_pvalue, levene_success, feature_avg_correlation,
                                             feature_avg_skew, feature_avg_kurtosis, feature_avg_mutual_information,
                                             dimensionality, intrinsic_dimensionality, intrinsic_dimensionality_ratio,
-                                            feature_noise, 
-                                            #distances, 
-                                            sample_avg_distance, sample_std_distance,
+                                            feature_noise, sample_avg_distance, sample_std_distance,
                                             imbalance_ratio_in_hull, imbalance_ratio_out_hull, imbalance_ratio_train,
                                             imbalance_ratio_val, in_hull_ratio, out_hull_ratio]
 
                     if dataset_name not in dataset_stats: dataset_stats[dataset_name] = dict()
-                    for dataset_metric_name, dataset_metric in zip(dataset_metrics_name, dataset_metrics):
+                    for dataset_metric_name, dataset_metric in zip(dataset_metrics_names, dataset_metrics):
                         if dataset_metric_name not in dataset_stats[dataset_name]: dataset_stats[dataset_name][dataset_metric_name] = []
                         dataset_stats[dataset_name][dataset_metric_name].append(dataset_metric)
 
-                    # get the list of folders (here representing different classifiers)
+                    # get the list of folders (here representing different classifiers, acting on the same fold)
                     classifier_folders = [ f.path for f in os.scandir(fold_folder) if f.is_dir() ]
                     print("Found %d classifiers for fold %d: \"%s\"" % (len(classifier_folders), fold_number, str(classifier_folders)))
 
@@ -275,7 +293,7 @@ def main() :
                             if metric_name not in performance[classifier_name] : performance[classifier_name][metric_name] = []
                             performance[classifier_name][metric_name].append(metric_performance)
 
-        # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
+        # once we are at this point, computation on all folds for the experiment is over, so let's draw some conclusions
         keys_found = []
         for classifier_name, classifier_metrics in performance.items() :
             for metric_name, metric_performance in classifier_metrics.items() :
@@ -287,8 +305,6 @@ def main() :
                 # and save everything to the dictionary structure, to be later converted to dataframe
                 key_name_mean = metric_name + " " + classifier_name + " (mean)"
                 key_name_std = metric_name + " " + classifier_name + " (std)"
-                if key_name_mean not in stats : stats[key_name_mean] = []
-                if key_name_std not in stats : stats[key_name_std] = []
                 stats[key_name_mean].append(c_mean)
                 stats[key_name_std].append(c_std)
 
@@ -305,23 +321,20 @@ def main() :
                 # and save everything to the dictionary structure, to be later converted to dataframe
                 key_name_mean = metric_name + " (mean)"
                 key_name_std = metric_name + " (std)"
-                if key_name_mean not in stats : stats[key_name_mean] = []
-                if key_name_std not in stats : stats[key_name_std] = []
                 stats[key_name_mean].append(c_mean)
                 stats[key_name_std].append(c_std)
 
                 # record that we had stats for this particular combination of metric and classifier
                 keys_found.append(metric_name)
 
+        # TODO this could be made much easier, just go through all entries in the dictionary and enlarge all lists that are not the largest list
         # here, we must check whether there are all results for all metrics and all classifiers; if that is
         # not the case, we add other 'None' values for everything in the lists
         for classifier_name in ml_algorithm_names :
-            for metric_name in metric_names :
+            for metric_name in classifier_metrics_names :
                 if metric_name + " " + classifier_name not in keys_found :
                     key_name_mean = metric_name + " " + classifier_name + " (mean)"
                     key_name_std = metric_name + " " + classifier_name + " (std)"
-                    if key_name_mean not in stats : stats[key_name_mean] = []
-                    if key_name_std not in stats : stats[key_name_std] = []
                     stats[key_name_mean].append(None)
                     stats[key_name_std].append(None)
 
@@ -352,31 +365,6 @@ def main() :
         sorted_columns = ["dataset"] + sorted_columns
         df = df.reindex(sorted_columns, axis=1)
         df.to_csv(output_file, index=False)
-
-    # THIS PART IS REPEATED
-    # sanitize dictionary: if some of the lists are shorter than the longest, remove them
-    # this can happen when some of the experiments are not over for some of the classifiers
-    longest_list_size = 0
-    for key, key_list in stats.items() :
-        if len(key_list) > longest_list_size :
-            longest_list_size = len(key_list)
-
-    keys_to_be_removed = []
-    for key, key_list in stats.items() :
-        if len(key_list) < longest_list_size :
-            keys_to_be_removed.append(key)
-
-    for key in keys_to_be_removed : del stats[key]
-
-    # finally, create a DataFrame from the dictionary and save it as CSV
-    print("Saving statistics to file \"%s\"..." % output_file)
-    df = pd.DataFrame.from_dict(stats)
-    # sort columns by name, EXCEPT 'dataset' that will be placed first
-    sorted_columns = sorted(df.columns)
-    sorted_columns.remove("dataset")
-    sorted_columns = ["dataset"] + sorted_columns
-    df = df.reindex(sorted_columns, axis=1)
-    df.to_csv(output_file, index=False)
 
     return
 
