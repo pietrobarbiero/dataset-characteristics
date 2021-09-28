@@ -137,10 +137,12 @@ def main() :
 
         task = openml.tasks.get_task(task_id)
         dataset = task.get_dataset()
+        print("Analyzing task %d, on dataset \"%s\"..." % (task_id, dataset.name))
 
         if dataset.name in dataset_names :
             dataset_name = dataset.name
             dataset_folder = os.path.join('results', dataset_name)
+            print("\nStarting analysis of dataset \"%s\"..." % dataset_name)
 
             # get data, impute missing values
             X, y = task.get_X_and_y()
@@ -156,7 +158,7 @@ def main() :
             cv_folders = [ f.path for f in os.scandir(dataset_folder) if f.is_dir() ]
 
             for cv_folder in cv_folders :
-                print("Now analyzing folder for \"%s\" for dataset \"%s\"..." % (os.path.basename(cv_folder), dataset_name))
+                print("Now analyzing folder for experiment \"%s\" (%s) for dataset \"%s\"..." % (os.path.basename(cv_folder), cv_folders, dataset_name))
 
                 # prepare local data structures
                 performance = dict()
@@ -193,7 +195,7 @@ def main() :
                     X_test_scaled = ss.transform(X_test)
 
                     # compute training set stats
-                    print("Split: %d - Computing data set stats..." % fold_number)
+                    print("\nSplit: %d - Computing data set stats..." % fold_number)
                     levene_stat, levene_pvalue, levene_success = homogeneity_class_covariances(X_train_scaled, y_train)
                     if math.isnan(levene_pvalue):
                         levene_pvalue = -1
@@ -293,78 +295,79 @@ def main() :
                             if metric_name not in performance[classifier_name] : performance[classifier_name][metric_name] = []
                             performance[classifier_name][metric_name].append(metric_performance)
 
-        # once we are at this point, computation on all folds for the experiment is over, so let's draw some conclusions
-        keys_found = []
-        for classifier_name, classifier_metrics in performance.items() :
-            for metric_name, metric_performance in classifier_metrics.items() :
-                print("Computing mean and std for \"" + metric_name + "\":", metric_performance)
-                c_mean = np.mean(metric_performance)
-                c_std = np.std(metric_performance)
-                print("Classifier \"%s\", metric \"%s\": mean=%.4f; std=%.4f" % (classifier_name, metric_name, c_mean, c_std))
+            # once we are at this point, computation on all folds for the experiment is over, so let's draw some conclusions
+            keys_found = []
+            for classifier_name, classifier_metrics in performance.items() :
+                for metric_name, metric_performance in classifier_metrics.items() :
+                    c_mean = np.mean(metric_performance)
+                    c_std = np.std(metric_performance)
+                    print("Classifier \"%s\", metric \"%s\": mean=%.4f; std=%.4f" % (classifier_name, metric_name, c_mean, c_std))
 
-                # and save everything to the dictionary structure, to be later converted to dataframe
-                key_name_mean = metric_name + " " + classifier_name + " (mean)"
-                key_name_std = metric_name + " " + classifier_name + " (std)"
-                stats[key_name_mean].append(c_mean)
-                stats[key_name_std].append(c_std)
-
-                # record that we had stats for this particular combination of metric and classifier
-                keys_found.append(metric_name + " " + classifier_name)
-
-        # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
-        for dataset_name, dataset_metrics in dataset_stats.items() :
-            for metric_name, metric_performance in dataset_metrics.items() :
-                c_mean = np.mean(metric_performance)
-                c_std = np.std(metric_performance)
-                print("Dataset \"%s\", metric \"%s\": mean=%.4f; std=%.4f" % (dataset_name, metric_name, c_mean, c_std))
-
-                # and save everything to the dictionary structure, to be later converted to dataframe
-                key_name_mean = metric_name + " (mean)"
-                key_name_std = metric_name + " (std)"
-                stats[key_name_mean].append(c_mean)
-                stats[key_name_std].append(c_std)
-
-                # record that we had stats for this particular combination of metric and classifier
-                keys_found.append(metric_name)
-
-        # TODO this could be made much easier, just go through all entries in the dictionary and enlarge all lists that are not the largest list
-        # here, we must check whether there are all results for all metrics and all classifiers; if that is
-        # not the case, we add other 'None' values for everything in the lists
-        for classifier_name in ml_algorithm_names :
-            for metric_name in classifier_metrics_names :
-                if metric_name + " " + classifier_name not in keys_found :
+                    # and save everything to the dictionary structure, to be later converted to dataframe
                     key_name_mean = metric_name + " " + classifier_name + " (mean)"
                     key_name_std = metric_name + " " + classifier_name + " (std)"
-                    stats[key_name_mean].append(None)
-                    stats[key_name_std].append(None)
+                    stats[key_name_mean].append(c_mean)
+                    stats[key_name_std].append(c_std)
 
-        # update: save partial dictionary, the script crashed with an out-of-memory error,
-        # so it's better to save partial results after every dataset
+                    # record that we had stats for this particular combination of metric and classifier
+                    keys_found.append(metric_name + " " + classifier_name)
 
-        # sanitize dictionary: if some of the lists are shorter than the longest, remove them
-        # this can happen when some of the experiments are not over for some of the classifiers
-        print(stats)
-        longest_list_size = 0
-        for key, key_list in stats.items() :
-            if len(key_list) > longest_list_size :
-                longest_list_size = len(key_list)
+            # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
+            for dataset_name, dataset_metrics in dataset_stats.items() :
+                for metric_name, metric_performance in dataset_metrics.items() :
+                    c_mean = np.mean(metric_performance)
+                    c_std = np.std(metric_performance)
+                    print("Dataset \"%s\", metric \"%s\": mean=%.4f; std=%.4f" % (dataset_name, metric_name, c_mean, c_std))
 
-        keys_to_be_removed = []
-        for key, key_list in stats.items() :
-            if len(key_list) < longest_list_size :
-                keys_to_be_removed.append(key)
+                    # and save everything to the dictionary structure, to be later converted to dataframe
+                    key_name_mean = metric_name + " (mean)"
+                    key_name_std = metric_name + " (std)"
+                    stats[key_name_mean].append(c_mean)
+                    stats[key_name_std].append(c_std)
 
-        for key in keys_to_be_removed : del stats[key]
+                    # record that we had stats for this particular combination of metric and classifier
+                    keys_found.append(metric_name)
 
-        print("Saving statistics to file \"%s\"..." % output_file)
-        df = pd.DataFrame.from_dict(stats)
-        # sort columns by name, EXCEPT 'dataset' that will be placed first
-        sorted_columns = sorted(df.columns)
-        print(sorted_columns)
-        sorted_columns.remove("dataset")
-        sorted_columns = ["dataset"] + sorted_columns
-        df = df.reindex(sorted_columns, axis=1)
-        df.to_csv(output_file, index=False)
+            # TODO this could be made much easier, just go through all entries in the dictionary and enlarge all lists that are not the largest list
+            # here, we must check whether there are all results for all metrics and all classifiers; if that is
+            # not the case, we add other 'None' values for everything in the lists
+            for classifier_name in ml_algorithm_names :
+                for metric_name in classifier_metrics_names :
+                    if metric_name + " " + classifier_name not in keys_found :
+                        key_name_mean = metric_name + " " + classifier_name + " (mean)"
+                        key_name_std = metric_name + " " + classifier_name + " (std)"
+                        stats[key_name_mean].append(None)
+                        stats[key_name_std].append(None)
+
+            # update: save partial dictionary, the script crashed with an out-of-memory error,
+            # so it's better to save partial results after every dataset
+
+            # sanitize dictionary: if some of the lists are shorter than the longest, remove them
+            # this can happen when some of the experiments are not over for some of the classifiers
+            print(stats)
+            longest_list_size = 0
+            for key, key_list in stats.items() :
+                if len(key_list) > longest_list_size :
+                    longest_list_size = len(key_list)
+
+            keys_to_be_removed = []
+            for key, key_list in stats.items() :
+                if len(key_list) < longest_list_size :
+                    keys_to_be_removed.append(key)
+
+            for key in keys_to_be_removed : del stats[key]
+
+            print("Saving statistics to file \"%s\"..." % output_file)
+            df = pd.DataFrame.from_dict(stats)
+            # sort columns by name, EXCEPT 'dataset' that will be placed first
+            sorted_columns = sorted(df.columns)
+            print(sorted_columns)
+            sorted_columns.remove("dataset")
+            sorted_columns = ["dataset"] + sorted_columns
+            df = df.reindex(sorted_columns, axis=1)
+            df.to_csv(output_file, index=False)
+
+        # end if dataset_name is in the list of folder datasets
 
     return
 
