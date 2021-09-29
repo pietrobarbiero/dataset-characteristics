@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import gc # let's try some explicit memory control
 import numpy as np
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.decomposition import PCA
@@ -88,6 +89,8 @@ def feature_correlation_class(X_train, y_train):
 			rho.append( np.average(triu, weights=triu) )
 		except IndexError:
 			pass
+		del C
+		gc.collect()
 	
 	fcc_mean = np.average( rho, weights=rho )
 #	fcc_std = np.std( rho )

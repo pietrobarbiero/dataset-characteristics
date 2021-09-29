@@ -68,8 +68,8 @@ def main() :
     # list of datasets in which we have issues, they will be ignored (at the moment, this information is not used)
     datasets_with_issues = [    "mnist_784",        # does not fit in memory during the experiments, probably (?)
                                 "Bioresponse",      # does not fit in memory during the experiments, probably (?)
-#                                "bank-marketing",   # crashes the analysis, out-of-memory error
-                                "connect-4",        # crashes the analysis, out-of-memory error
+#                                "bank-marketing",   # crashes the analysis, out-of-memory error (now working with gc.collect() after every classifier)
+#                                "connect-4",        # crashes the analysis, out-of-memory error
                             ]
     datasets_to_be_ignored = [] + datasets_with_issues
 
@@ -166,7 +166,7 @@ def main() :
     benchmark_suite = openml.study.get_suite('OpenML-CC18')
 
     # and here we start the folder-by-folder analysis
-    for task_id in benchmark_suite.tasks:
+    for task_id in [146195,] : # benchmark_suite.tasks :
 
         task = openml.tasks.get_task(task_id)
         dataset = task.get_dataset() # this is really slow, and we would just need the NAME of the dataset, but there is apparently no other way of getting it
@@ -227,17 +227,36 @@ def main() :
                     X_train_scaled = ss.transform(X_train)
                     X_test_scaled = ss.transform(X_test)
 
-                    # compute training set stats
+                    # let's try to save memory
+                    del X_train
+                    gc.collect()
+
+                    # compute training set stats, this time with aggressive memory control
                     print("\nSplit: %d - Computing data set stats..." % fold_number)
+                    print("\tComputing homogeneity_class_covariances...")
                     levene_stat, levene_pvalue, levene_success = homogeneity_class_covariances(X_train_scaled, y_train)
                     if math.isnan(levene_pvalue):
                         levene_pvalue = -1
                     if math.isnan(levene_stat):
                         levene_stat = -1
+                    gc.collect()
+
+                    print("\tComputing feature_correlation_class...")
                     feature_avg_correlation = feature_correlation_class(X_train_scaled, y_train)
+                    gc.collect()
+
+                    print("\tComputing normality_departure...")
                     feature_avg_skew, feature_avg_kurtosis = normality_departure(X_train_scaled, y_train)
+                    gc.collect()
+
+                    print("\tComputing information...")
                     feature_avg_mutual_information = information(X_train_scaled, y_train)
+                    gc.collect()
+
+                    print("\tComputing dimensionality_stats...")
                     dimensionality, intrinsic_dimensionality, intrinsic_dimensionality_ratio, feature_noise, distances = dimensionality_stats(X_train_scaled)
+                    gc.collect()
+
                     sample_avg_distance = np.average(distances, weights=distances)
                     sample_std_distance = np.std(distances)
                     print("Split: %d - Data set stats computed!" % fold_number)
