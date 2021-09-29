@@ -1,10 +1,11 @@
 """
 Script to perform post-processing of the results. Now cleaned and refactored.
 """
+import gc # let's try some explicit memory control to avoid crashes
 import math
-import os
 import numpy as np
 import openml
+import os
 import pandas as pd
 import re
 import sys
@@ -62,15 +63,17 @@ def is_experiment_complete(dataset_folder) :
 
 def main() :
 
+    # TODO restructure everything so that the task_id is used to skip datasets already processed (MUCH faster than loading dataset and checking name)
+
     # list of datasets in which we have issues, they will be ignored (at the moment, this information is not used)
     datasets_with_issues = [    "mnist_784",        # does not fit in memory during the experiments, probably (?)
                                 "Bioresponse",      # does not fit in memory during the experiments, probably (?)
-                                "bank-marketing",   # crashes the analysis, out-of-memory error
+#                                "bank-marketing",   # crashes the analysis, out-of-memory error
                                 "connect-4",        # crashes the analysis, out-of-memory error
                             ]
     datasets_to_be_ignored = [] + datasets_with_issues
 
-    # TODO read 'results.csv' (if it exists) and check which datasets have already been processed
+    # read 'results.csv' (if it exists) and check which datasets have already been processed
     output_file = "results.csv"
     
     # this is the root folder with all results
@@ -324,6 +327,9 @@ def main() :
                         for metric_name, metric_performance in metrics_dict.items() :
                             if metric_name not in performance[classifier_name] : performance[classifier_name][metric_name] = []
                             performance[classifier_name][metric_name].append(metric_performance)
+
+                        # call garbage collector to save memory (hopefully)
+                        gc.collect()
 
             # once we are at this point, computation on all folds for the experiment is over, so let's draw some conclusions
             keys_found = []
