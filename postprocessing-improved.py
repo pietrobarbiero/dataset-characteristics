@@ -64,6 +64,7 @@ def main() :
 
     # list of datasets in which we have issues, they will be ignored (at the moment, this information is not used)
     datasets_with_issues = ["mnist_784", "Bioresponse"]
+    datasets_to_be_ignored = [] + datasets_with_issues
 
     # TODO read 'results.csv' (if it exists) and check which datasets have already been processed
     output_file = "results.csv"
@@ -129,6 +130,27 @@ def main() :
     # before starting to analyze each experiment, we need to load the benchmark suite to compute some stats 
     dataset_names = [os.path.basename(dataset_folder) for dataset_folder in dataset_folders]
 
+    # check if the output file already exists, read it and take note of the datasets that have already been processed
+    if os.path.exists(output_file) :
+        print("Found existing output file \"%s\". Reading..." % output_file)
+        df = pd.read_csv(output_file)
+
+        # check if the columns of the dataframe are exactly the same as the entries in the dictionary that we are using to collect stats
+        if set(df.columns) == set(stats.keys()) :
+            datasets_already_treated = list(df["dataset"].values)
+            print("Found " + str(len(datasets_already_treated)) + " datasets already treated:", datasets_already_treated)
+            datasets_to_be_ignored += datasets_already_treated
+        else :
+            print("Found unexpected columns in the CSV file, cannot proceed. %d columns in file, %d keys in dictionary." % (len(df.columns), len(stats.keys())))
+            dc = sorted(list(df))
+            dk = sorted(stats.keys())
+            print("Dataset columns:", dc)
+            print("Dictionary keys:", dk)
+
+            for item in dk :
+                if item not in dc :
+                    print("Dictionary key not found in dataset:", item)
+
     print("Loading benchmark suite \"OpenML-CC18\"...")
     benchmark_suite = openml.study.get_suite('OpenML-CC18')
 
@@ -137,12 +159,12 @@ def main() :
 
         task = openml.tasks.get_task(task_id)
         dataset = task.get_dataset()
-        print("Analyzing task %d, on dataset \"%s\"..." % (task_id, dataset.name))
+        print("\nAnalyzing task %d, on dataset \"%s\"..." % (task_id, dataset.name))
 
         if dataset.name in dataset_names :
             dataset_name = dataset.name
             dataset_folder = os.path.join('results', dataset_name)
-            print("\nStarting analysis of dataset \"%s\"..." % dataset_name)
+            print("Starting analysis of dataset \"%s\"..." % dataset_name)
 
             # get data, impute missing values
             X, y = task.get_X_and_y()
@@ -312,7 +334,6 @@ def main() :
                     # record that we had stats for this particular combination of metric and classifier
                     keys_found.append(metric_name + " " + classifier_name)
 
-            # once we are at this point, computation on all cv folders for the dataset is over, so let's draw some conclusions
             for dataset_name, dataset_metrics in dataset_stats.items() :
                 for metric_name, metric_performance in dataset_metrics.items() :
                     c_mean = np.mean(metric_performance)
@@ -328,16 +349,11 @@ def main() :
                     # record that we had stats for this particular combination of metric and classifier
                     keys_found.append(metric_name)
 
-            # TODO this could be made much easier, just go through all entries in the dictionary and enlarge all lists that are not the largest list
-            # here, we must check whether there are all results for all metrics and all classifiers; if that is
-            # not the case, we add other 'None' values for everything in the lists
-            for classifier_name in ml_algorithm_names :
-                for metric_name in classifier_metrics_names :
-                    if metric_name + " " + classifier_name not in keys_found :
-                        key_name_mean = metric_name + " " + classifier_name + " (mean)"
-                        key_name_std = metric_name + " " + classifier_name + " (std)"
-                        stats[key_name_mean].append(None)
-                        stats[key_name_std].append(None)
+            # go through all entries in the dictionary and enlarge all lists that are not the largest list
+            current_list_length = len(stats["dataset"])
+            for key in stats.keys() :
+                if len(stats[key]) < current_list_length :
+                    stats[key].append(None)
 
             # update: save partial dictionary, the script crashed with an out-of-memory error,
             # so it's better to save partial results after every dataset
@@ -357,14 +373,14 @@ def main() :
 
             for key in keys_to_be_removed : del stats[key]
 
-            print("Saving statistics to file \"%s\"..." % output_file)
             df = pd.DataFrame.from_dict(stats)
             # sort columns by name, EXCEPT 'dataset' that will be placed first
             sorted_columns = sorted(df.columns)
-            print(sorted_columns)
+            #print(sorted_columns)
             sorted_columns.remove("dataset")
             sorted_columns = ["dataset"] + sorted_columns
             df = df.reindex(sorted_columns, axis=1)
+            print("Saving statistics (%d rows x %d columns) to file \"%s\"..." % (df.shape[0], df.shape[1], output_file))
             df.to_csv(output_file, index=False)
 
         # end if dataset_name is in the list of folder datasets
