@@ -63,7 +63,11 @@ def is_experiment_complete(dataset_folder) :
 def main() :
 
     # list of datasets in which we have issues, they will be ignored (at the moment, this information is not used)
-    datasets_with_issues = ["mnist_784", "Bioresponse"]
+    datasets_with_issues = [    "mnist_784",        # does not fit in memory during the experiments, probably (?)
+                                "Bioresponse",      # does not fit in memory during the experiments, probably (?)
+                                "bank-marketing",   # crashes the analysis, out-of-memory error
+                                "connect-4",        # crashes the analysis, out-of-memory error
+                            ]
     datasets_to_be_ignored = [] + datasets_with_issues
 
     # TODO read 'results.csv' (if it exists) and check which datasets have already been processed
@@ -140,6 +144,10 @@ def main() :
             datasets_already_treated = list(df["dataset"].values)
             print("Found " + str(len(datasets_already_treated)) + " datasets already treated:", datasets_already_treated)
             datasets_to_be_ignored += datasets_already_treated
+
+            # if everything is ok, convert the dataframe to the current 'stats' dictionary
+            stats = df.to_dict(orient='list') # orient='list' creates a dictionart of list
+            #print(stats)
         else :
             print("Found unexpected columns in the CSV file, cannot proceed. %d columns in file, %d keys in dictionary." % (len(df.columns), len(stats.keys())))
             dc = sorted(list(df))
@@ -158,10 +166,10 @@ def main() :
     for task_id in benchmark_suite.tasks:
 
         task = openml.tasks.get_task(task_id)
-        dataset = task.get_dataset()
+        dataset = task.get_dataset() # this is really slow, and we would just need the NAME of the dataset, but there is apparently no other way of getting it
         print("\nAnalyzing task %d, on dataset \"%s\"..." % (task_id, dataset.name))
 
-        if dataset.name in dataset_names :
+        if dataset.name in dataset_names and dataset.name not in datasets_to_be_ignored :
             dataset_name = dataset.name
             dataset_folder = os.path.join('results', dataset_name)
             print("Starting analysis of dataset \"%s\"..." % dataset_name)
@@ -360,7 +368,7 @@ def main() :
 
             # sanitize dictionary: if some of the lists are shorter than the longest, remove them
             # this can happen when some of the experiments are not over for some of the classifiers
-            print(stats)
+            #print(stats)
             longest_list_size = 0
             for key, key_list in stats.items() :
                 if len(key_list) > longest_list_size :
@@ -384,6 +392,11 @@ def main() :
             df.to_csv(output_file, index=False)
 
         # end if dataset_name is in the list of folder datasets
+        elif dataset.name in datasets_to_be_ignored :
+            print("Dataset \"%s\" found in the list of datasets already treated and/or datasets creating issues, skipping..." % dataset.name)
+
+        elif dataset.name not in dataset_names :
+            print("No folder found for dataset \"%s\", experiment probably not started (or finished), skipping..." % dataset.name)
 
     return
 
