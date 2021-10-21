@@ -143,9 +143,27 @@ def main() :
 
         # check if the columns of the dataframe are exactly the same as the entries in the dictionary that we are using to collect stats
         if set(df.columns) == set(stats.keys()) :
-            datasets_already_treated = list(df["dataset"].values)
+            
+            # get the list of datasets in the file
+            datasets_already_treated = list(df["dataset"].unique())
+            datasets_treated_but_incomplete = []
+
+            # check if there is an incomplete dataset: for every dataset, for every cv, check if all folds are actually there
+            for d in datasets_already_treated :
+                df_selected = df[ df["dataset"] == d ]
+                for cv in df_selected["cv"].unique() :
+                    # parse the 'cv' entry to get the number of expected folds
+                    n_folds = int(re.search("([0-9]+)-fold-cv", cv).group(1))
+                    if (df_selected[ df_selected["cv"] == cv ].shape[0] < n_folds) :
+                        datasets_treated_but_incomplete.append(d)
+
             print("Found " + str(len(datasets_already_treated)) + " datasets already treated:", datasets_already_treated)
-            datasets_to_be_ignored += datasets_already_treated
+            print("Found " + str(len(datasets_treated_but_incomplete)) + " datasets already treated, but incomplete:", datasets_treated_but_incomplete)
+            
+            # remove all rows corresponding to incomplete datasets
+            df = df.drop(df[ df["dataset"].isin(datasets_treated_but_incomplete))
+            # finalize the list of datasets to be ignored
+            datasets_to_be_ignored += [d for d in datasets_already_treated if d not in datasets_treated_but_incomplete]
 
             # if everything is ok, convert the dataframe to the current 'stats' dictionary
             stats = df.to_dict(orient='list') # orient='list' creates a dictionart of list
