@@ -161,7 +161,7 @@ def main() :
             print("Found " + str(len(datasets_treated_but_incomplete)) + " datasets already treated, but incomplete:", datasets_treated_but_incomplete)
             
             # remove all rows corresponding to incomplete datasets
-            df = df.drop(df[ df["dataset"].isin(datasets_treated_but_incomplete))
+            df = df.drop(df[ df["dataset"].isin(datasets_treated_but_incomplete)])
             # finalize the list of datasets to be ignored
             datasets_to_be_ignored += [d for d in datasets_already_treated if d not in datasets_treated_but_incomplete]
 
