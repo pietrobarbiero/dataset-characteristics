@@ -105,7 +105,7 @@ def cross_validation(classifier, model_name, X, y, train_index, test_index,
 
 def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, result_dir: str = "./results",
                           n_splits: int = 10, random_state: int = 42,
-                          task_id: int = None, dataset_name: str = None):
+                          task_id: int = None, dataset_name: str = None, parallel_folds: bool = True):
     logging.info("%s has %d samples and %d features" % (dataset_name, X.shape[0], X.shape[1]))
 
     for model_name, classifier in classifiers.items():
@@ -122,14 +122,19 @@ def compute_dataset_stats(X: np.ndarray, y: np.ndarray, classifiers: List, resul
             #    cross_validation(copy.deepcopy(classifier), X, y, train_index, test_index, random_state,
             #                     n_splits, split_idx, task_id, dataset_name, result_dir)
 
-            # We clone the estimator to make sure that all the folds are
-            # independent, and that it is pickle-able.
-            parallel = joblib.Parallel(n_jobs=n_splits, prefer="threads")
-            scores = parallel(
-                joblib.delayed(cross_validation)(
-                    copy.deepcopy(classifier), model_name, X, y, train_index, test_index, random_state,
-                    n_splits, split_idx, task_id, dataset_name, result_dir)
-                for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
+            if parallel_folds:
+                # We clone the estimator to make sure that all the folds are
+                # independent, and that it is pickle-able.
+                parallel = joblib.Parallel(n_jobs=n_splits, prefer="threads")
+                scores = parallel(
+                    joblib.delayed(cross_validation)(
+                        copy.deepcopy(classifier), model_name, X, y, train_index, test_index, random_state,
+                        n_splits, split_idx, task_id, dataset_name, result_dir)
+                    for (train_index, test_index), split_idx in zip(cv.split(X, y), splits))
+            else:
+                for (train_index, test_index), split_idx in zip(cv.split(X, y), splits):
+                    cross_validation(copy.deepcopy(classifier), model_name, X, y, train_index, test_index, random_state,
+                                     n_splits, split_idx, task_id, dataset_name, result_dir)
 
         except:
             logging.exception(": data set (%d, %s)" % (task_id, dataset_name))
@@ -148,6 +153,7 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
     # create output folder
     os.makedirs(result_dir, exist_ok=True)
 
+    parallel_folds = True
     progress_bar = tqdm(benchmark_suite.tasks, leave=False, position=0)
     for task_id in benchmark_suite.tasks:
 
@@ -156,23 +162,27 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
         if dataset.name in datasets_with_issues :
 
             logging.info("Dataset \"%s\" has known issues, skipping..." % dataset.name)
+            parallel_folds = False
 
-        else :
+        # else :
 
-            # get data
-            X, y = task.get_X_and_y()
+        # get data
+        X, y = task.get_X_and_y()
 
-            if np.any(np.isnan(X).flatten()):
-                logging.info("Missing samples in task, calling imputer...")
-                imputer = KNNImputer()
-                X = imputer.fit_transform(X)
+        if np.any(np.isnan(X).flatten()):
+            logging.info("Missing samples in task, calling imputer...")
+            imputer = KNNImputer()
+            X = imputer.fit_transform(X)
 
-            progress_bar.set_description("Analysis of data set: %s" % dataset.name)
-            logging.info("Starting analysis of data set: %s" % dataset.name)
+        progress_bar.set_description("Analysis of data set: %s" % dataset.name)
+        logging.info("Starting analysis of data set: %s" % dataset.name)
 
-            # compute and save stats
-            compute_dataset_stats(X, y, classifiers, result_dir, n_splits, task_id=task_id, dataset_name=dataset.name)
+        # compute and save stats
+        compute_dataset_stats(X, y, classifiers, result_dir, n_splits,
+                              task_id=task_id, dataset_name=dataset.name,
+                              parallel_folds=parallel_folds)
 
-            logging.info("Finished analysis of data set: %s" % dataset.name)
+        logging.info("Finished analysis of data set: %s" % dataset.name)
+        parallel_folds = True
 
     return
