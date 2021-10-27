@@ -87,6 +87,11 @@ def main() :
     stats["dataset"] = [] # dataset name
     stats["cv"] = [] # type of cross-validation (10-fold, 5-fold, ...)
     stats["fold"] = [] # id of the fold (0, 1, ...)
+    stats["n_samples"] = [] # number of samples
+    stats["n_features"] = [] # number of features
+    stats["n_classes"] = [] # number of different classes
+    stats["n_features_over_n_samples"] = []
+    stats["intrinsic_dimensionality_over_n_samples"] = []
 
     # the basic idea is that first we are going to find all the names of the columns in the future dataset result
     # names of the metrics related to the dataset are hard-coded
@@ -227,6 +232,10 @@ def main() :
                     stats["dataset"].append(dataset_name)
                     stats["cv"].append(cv_folder)
                     stats["fold"].append(fold_number)
+                    stats["n_samples"].append(X.shape[0])
+                    stats["n_features"].append(X.shape[1])
+                    stats["n_features_over_n_samples"].append(X.shape[0] / float(X.shape[1]))
+                    stats["n_classes"].append(len(np.unique(y)))
 
                     # read some information, to be used later
                     df_train = pd.read_csv(os.path.join(fold_folder, "y_train.csv"))
@@ -308,6 +317,9 @@ def main() :
                     for dataset_metric_name, dataset_metric in zip(dataset_metrics_names, dataset_metrics):
                         if dataset_metric_name not in stats : stats[dataset_metric_name] = []
                         stats[dataset_metric_name].append(dataset_metric)
+
+                    # add the last stat
+                    stats["intrinsic_dimensionality_over_n_samples"].append(intrinsic_dimensionality / float(X.shape[0]))
 
                     # get the list of folders (here representing different classifiers, acting on the same fold)
                     classifier_folders = [ f.path for f in os.scandir(fold_folder) if f.is_dir() ]
