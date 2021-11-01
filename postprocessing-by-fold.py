@@ -1,5 +1,7 @@
 """
 Script to perform post-processing of the results. Now cleaned and refactored.
+
+TODO: I need to take into account the structure of the old results CSV; not only, but also compute train accuracy/f1/etc. ...it's probably faster to adopt the same type of naming convention. See local_old_scripts.
 """
 import gc # let's try some explicit memory control to avoid crashes
 import math
