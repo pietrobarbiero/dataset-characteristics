@@ -86,12 +86,15 @@ def main() :
 
     # dictionary that will contain all the final results
     stats = dict()
-    stats["dataset"] = [] # dataset name
-    stats["cv"] = [] # type of cross-validation (10-fold, 5-fold, ...)
-    stats["fold"] = [] # id of the fold (0, 1, ...)
+    stats["data_set_name"] = [] # dataset name
+    stats["data_set_id"] = [] # I am not sure we can have this
+    stats["model_name"] = [] # classifier
+    stats["split_idx"] = [] # id of the fold (0, 1, ...)
     stats["n_samples"] = [] # number of samples
     stats["n_features"] = [] # number of features
     stats["n_classes"] = [] # number of different classes
+    stats["n_splits"] = [] # number of splits
+    stats["random_state"] = [] # random state
     stats["n_features_over_n_samples"] = []
     stats["intrinsic_dimensionality_over_n_samples"] = []
 
@@ -104,16 +107,13 @@ def main() :
                                 'imbalance_ratio_in_hull', 'imbalance_ratio_out_hull', 'imbalance_ratio_train',
                                 'imbalance_ratio_val', 'in_hull_ratio', 'out_hull_ratio']
 
-    # add a column to the stats dictionary for each dataset metric, considering mean and std
+    # add a column to the stats dictionary for each dataset metric
     for metric in dataset_metrics_names : stats[metric] = []
 
     # now, we go through all folders with the results, each folder is a different experiment on a different dataset; depending on the number
     # of different ML algorithms found, we are going to create the corresponding columns for each metric
-    classifier_metrics_names = [
-        accuracy_score.__name__,
-        matthews_corrcoef.__name__,
-        f1_score.__name__,
-            ]
+    classifier_metrics = ["train_accuracy", "train_f1", "val_accuracy", "val_accuracy_in_hull", "val_accuracy_out_hull", "val_f1", "val_f1_in_hull", "val_f1_out_hull"]
+    for metric in classifier_metrics : stats[metric] = []
 
     # get list of folders (corresponding to each dataset)
     dataset_folders = [ f.path for f in os.scandir(result_folder) if f.is_dir() ]
@@ -125,21 +125,6 @@ def main() :
     # filter out folders for which computation is incomplete, using is_experiment_complete
     dataset_folders = [ d for d in dataset_folders if is_experiment_complete(d) ]
     print("Complete experiments: %d" % len(dataset_folders))
-
-    # let's get a list of all ML algorithms used among all folders; they correspond to the sub-folder names
-    ml_algorithm_names = []
-    for d in dataset_folders : # for each dataset folder
-        for v in [ f.path for f in os.scandir(d) if f.is_dir() ] : # for each N-fold cross-validation
-            for fold in [ f.path for f in os.scandir(v) if f.is_dir() ] : # for each fold
-                ml_algorithm_names.extend( [ f.name for f in os.scandir(fold) if f.is_dir() ] )
-    ml_algorithm_names = sorted(list(set(ml_algorithm_names)))
-    print("Here is the list of all ML algorithms appearing at least once in the folders:", ml_algorithm_names)
-
-    # add entries to the dictionary for each combination of classifier metric and classifier name
-    for metric_name in classifier_metrics_names :
-        for classifier_name in ml_algorithm_names :
-            for hull in ["", "_in_hull", "_out_hull"] : # three possibilities: regular metric, metric in-hull, metric out-hull
-                stats[metric_name + hull + " " + classifier_name] = []
 
     # before starting to analyze each experiment, we need to load the benchmark suite to compute some stats 
     dataset_names = [os.path.basename(dataset_folder) for dataset_folder in dataset_folders]
@@ -175,7 +160,7 @@ def main() :
             datasets_to_be_ignored += [d for d in datasets_already_treated if d not in datasets_treated_but_incomplete]
 
             # if everything is ok, convert the dataframe to the current 'stats' dictionary
-            stats = df.to_dict(orient='list') # orient='list' creates a dictionart of list
+            stats = df.to_dict(orient='list') # orient='list' creates a dictionary of list
             #print(stats)
         else :
             print("Found unexpected columns in the CSV file, cannot proceed. %d columns in file, %d keys in dictionary." % (len(df.columns), len(stats.keys())))
@@ -229,15 +214,6 @@ def main() :
                 for fold_folder in fold_folders :
 
                     fold_number = int(re.search("([0-9]+)", os.path.basename(fold_folder)).group(1))
-
-                    # add dataset name to the dictionary, with type of cross validation and number of fold
-                    stats["dataset"].append(dataset_name)
-                    stats["cv"].append(cv_folder)
-                    stats["fold"].append(fold_number)
-                    stats["n_samples"].append(X.shape[0])
-                    stats["n_features"].append(X.shape[1])
-                    stats["n_features_over_n_samples"].append(X.shape[0] / float(X.shape[1]))
-                    stats["n_classes"].append(len(np.unique(y)))
 
                     # read some information, to be used later
                     df_train = pd.read_csv(os.path.join(fold_folder, "y_train.csv"))
@@ -316,20 +292,33 @@ def main() :
                                             imbalance_ratio_in_hull, imbalance_ratio_out_hull, imbalance_ratio_train,
                                             imbalance_ratio_val, in_hull_ratio, out_hull_ratio]
 
-                    for dataset_metric_name, dataset_metric in zip(dataset_metrics_names, dataset_metrics):
-                        if dataset_metric_name not in stats : stats[dataset_metric_name] = []
-                        stats[dataset_metric_name].append(dataset_metric)
-
-                    # add the last stat
-                    stats["intrinsic_dimensionality_over_n_samples"].append(intrinsic_dimensionality / float(X.shape[0]))
-
                     # get the list of folders (here representing different classifiers, acting on the same fold)
                     classifier_folders = [ f.path for f in os.scandir(fold_folder) if f.is_dir() ]
                     print("Found %d classifiers for fold %d: \"%s\"" % (len(classifier_folders), fold_number, str(classifier_folders)))
 
                     for classifier_folder in classifier_folders :
+
+                        # now, all stats that were previously added at the level of the fold are added here instead,
+                        # and copied for each row, of each classifier
+                        for dataset_metric_name, dataset_metric in zip(dataset_metrics_names, dataset_metrics):
+                            stats[dataset_metric_name].append(dataset_metric)
+
+                        # add the last stat
+                        stats["intrinsic_dimensionality_over_n_samples"].append(intrinsic_dimensionality / float(X.shape[0]))
+
+                        stats["data_set_name"].append(dataset_name)
+                        stats["data_set_id"].append(task_id)
+                        stats["n_splits"].append(cv_folder)
+                        stats["split_idx"].append(fold_number)
+                        stats["n_samples"].append(X.shape[0])
+                        stats["n_features"].append(X.shape[1])
+                        stats["n_features_over_n_samples"].append(X.shape[0] / float(X.shape[1]))
+                        stats["n_classes"].append(len(np.unique(y)))
+                        stats["random_state"].append( 42 ) # in fact, we don't know much about the random state, or do we?
+
                         # get classifier name
                         classifier_name = os.path.basename(classifier_folder)
+                        stats["model_name"].append( classifier_name )
 
                         # get statistics (in this case, accuracy on test)
                         df_pred_train = pd.read_csv(os.path.join(classifier_folder, "y_train_pred.csv"))
@@ -342,10 +331,15 @@ def main() :
                         y_pred_in_hull = y_pred_test[in_indexes]
                         y_pred_out_hull = y_pred_test[out_indexes]
 
-                        # scores
-                        # create local dictionary of metrics, using a list of function pointers!
-                        # update: it works poorly, because some metrics need special values for their arguments in specific cases
+                        # and now, we compute classifier metrics!
+                        # TODO for the moment, we leave MCC to the side
                         print("Split: %d; Classifier: \"%s\" - Computing predictions..." % (fold_number, classifier_name))
+
+                        # training stats
+                        stats["train_accuracy"].append( accuracy_score(y_train, y_pred_train) )
+                        stats["train_f1"].append( f1_score(y_train, y_pred_train, average='weighted') )
+                        
+                        # test stats
                         test_accuracy_in_hull, test_f1_in_hull, test_mc_in_hull, test_accuracy_out_hull, test_f1_out_hull, test_mc_out_hull = np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
                         if len(y_in_hull) > 0:
                             test_accuracy_in_hull = accuracy_score(y_in_hull, y_pred_in_hull)
@@ -357,47 +351,32 @@ def main() :
                             test_f1_out_hull = f1_score(y_out_hull, y_pred_out_hull, average="weighted")
                             test_mc_out_hull = matthews_corrcoef(y_out_hull, y_pred_out_hull)
 
-                        metrics_dict = dict()
-                        metrics_dict[accuracy_score.__name__] = accuracy_score(y_test, y_pred_test)
-                        metrics_dict[matthews_corrcoef.__name__] = matthews_corrcoef(y_test, y_pred_test)
+                        stats["val_accuracy"].append( accuracy_score(y_test, y_pred_test) ) 
+                        stats["val_accuracy_in_hull"].append( test_accuracy_in_hull )
+                        stats["val_accuracy_out_hull"].append( test_accuracy_out_hull )
 
-                        if len(np.unique(y_test)) == 2 :
-                            metrics_dict[f1_score.__name__] = f1_score(y_test, y_pred_test)
-                        else :
-                            metrics_dict[f1_score.__name__] = f1_score(y_test, y_pred_test, average='weighted')
-                        metrics_dict[accuracy_score.__name__ + '_in_hull'] = test_accuracy_in_hull
-                        metrics_dict[f1_score.__name__ + '_in_hull'] = test_f1_in_hull
-                        metrics_dict[matthews_corrcoef.__name__ + '_in_hull'] = test_mc_in_hull
+                        stats["val_f1"].append( f1_score(y_test, y_pred_test, average='weighted') )
+                        stats["val_f1_in_hull"].append( test_f1_in_hull )
+                        stats["val_f1_out_hull"].append( test_f1_out_hull )
 
-                        metrics_dict[accuracy_score.__name__ + '_out_hull'] = test_accuracy_out_hull
-                        metrics_dict[f1_score.__name__ + '_out_hull'] = test_f1_out_hull
-                        metrics_dict[matthews_corrcoef.__name__ + '_out_hull'] = test_mc_out_hull
                         print("Split: %d; Classifier: \"%s\" - Predictions computed!" % (fold_number, classifier_name))
-
-                        # store performance, as a dictionary (classifier) of dictionaries (metrics) of lists (performance per fold)
-                        for metric_name, metric_performance in metrics_dict.items() :
-                            classifier_metric_name = metric_name + " " + classifier_name
-                            if classifier_metric_name not in stats : stats[classifier_metric_name] = []
-                            stats[classifier_metric_name].append(metric_performance)
 
                         # call garbage collector to save memory (hopefully)
                         gc.collect()
 
-                    # go through all entries in the dictionary and enlarge all lists that are not the largest list
-                    current_list_length = len(stats["dataset"])
-                    for key in stats.keys() :
-                        if len(stats[key]) < current_list_length :
-                            stats[key].append(None)
-
                     # save partial dictionary, the script crashed with an out-of-memory error,
                     # so it's better to save partial results after every dataset
+                    #print(stats)
+                    #for k in stats.keys() :
+                    #    print("Key \"%s\" has a list with %d elements" % (k, len(stats[k])))
                     df = pd.DataFrame.from_dict(stats)
                     # sort columns by name, EXCEPT 'dataset' that will be placed first
                     sorted_columns = sorted(df.columns)
-                    sorted_columns.remove("dataset")
-                    sorted_columns.remove("cv")
-                    sorted_columns.remove("fold")
-                    sorted_columns = ["dataset", "cv", "fold"] + sorted_columns
+                    sorted_columns.remove("data_set_name")
+                    sorted_columns.remove("data_set_id")
+                    sorted_columns.remove("n_splits")
+                    sorted_columns.remove("split_idx")
+                    sorted_columns = ["data_set_name", "data_set_id", "n_splits", "split_idx"] + sorted_columns
                     df = df.reindex(sorted_columns, axis=1)
                     print("Saving statistics (%d rows x %d columns) to file \"%s\"..." % (df.shape[0], df.shape[1], output_file))
                     df.to_csv(output_file, index=False)
