@@ -143,12 +143,18 @@ idx_rf = []
 idx_lr = []
 idx_svc = []
 for i, name in enumerate(M["model_name"]):
-    if "SVC" in name:
-        idx_svc.append(i)
-    if "LogisticRegression" in name:
-        idx_lr.append(i)
-    if "RandomForest" in name:
+    #if "SVC" in name:
+    #    idx_svc.append(i)
+    #if "LogisticRegression" in name:
+    #    idx_lr.append(i)
+    #if "RandomForest" in name:
+    #    idx_rf.append(i)
+    if "RandomForestHT" in name :
         idx_rf.append(i)
+    if "LogisticRegressionHT" in name :
+        idx_lr.append(i)
+    if "SVCHT" in name :
+        idx_svc.append(i)
 
 M_rf = M.iloc[idx_rf]
 M_lr = M.iloc[idx_lr]
