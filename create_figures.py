@@ -109,6 +109,7 @@ if True :
             "val_f1_in_hull",
             "val_f1_out_hull",
             ]]
+    #M = M[ (M["model_name"] == "LogisticRegressionHT") | (M["model_name"] == "RandomForestHT") ]
     variant = "_revised_for_paper"
 if False :
     M.dropna(inplace=True)
@@ -262,7 +263,8 @@ selected = [
     'val_f1',
 ]
 
-C = M.corr()
+C = M[ (M["model_name"] == "RandomForestHT") | (M["model_name"] == "LogisticRegressionHT") ].corr()
+#C = M.corr()
 
 C = C.loc[selected][selected]
 
