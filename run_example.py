@@ -30,6 +30,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
 
 import convex_hull_stats
 
@@ -94,8 +95,8 @@ def main():
         'max_depth' : [4, 5, 6, 7, 8, None],
         'criterion' :['gini', 'entropy']
         }
-    classifiers["RandomForestHT"] = HalvingGridSearchCV(RandomForestClassifier(random_state=random_state), rf_parameter_grid, random_state=random_state)
-    classifiers["RandomForest"] = RandomForestClassifier(random_state=random_state)
+    # classifiers["RandomForestHT"] = HalvingGridSearchCV(RandomForestClassifier(random_state=random_state), rf_parameter_grid, random_state=random_state)
+    # classifiers["RandomForest"] = RandomForestClassifier(random_state=random_state)
 
     svc_parameter_grid = {
         'C': [0.1, 1.0, 10, 100, 1000],
@@ -111,8 +112,16 @@ def main():
         'C' : np.logspace(-3,3,7),
         'penalty' : ['none', 'l2'],
         }
-    classifiers["LogisticRegressionHT"] = HalvingGridSearchCV(LogisticRegression(random_state=random_state), lr_parameter_grid, random_state=random_state)
-    classifiers["LogisticRegression"] = LogisticRegression(random_state=random_state)
+    # classifiers["LogisticRegressionHT"] = HalvingGridSearchCV(LogisticRegression(random_state=random_state), lr_parameter_grid, random_state=random_state)
+    # classifiers["LogisticRegression"] = LogisticRegression(random_state=random_state)
+
+    mlp_parameter_grid = {
+        'hidden_layer_sizes' : [(50), (100), (50, 50), (100, 50)],
+        'learning_rate_init' : [0.001, 0.0001],
+        }
+    classifiers["MLPClassifierHT"] = HalvingGridSearchCV(MLPClassifier(max_iter=1000, early_stopping=True, random_state=random_state),
+                                                         mlp_parameter_grid, random_state=random_state)
+    # classifiers["MLPClassifier"] = MLPClassifier(random_state=random_state)
 
     convex_hull_stats.openml_stats_all(benchmark_suite, classifiers, n_splits=10)
 
