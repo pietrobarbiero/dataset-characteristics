@@ -59,10 +59,10 @@ label_to_latex["intrinsic_dimensionality_over_n_samples"] = r"$\mathfrak{I}/n$"
 ##############################################################################
 # ALL'IMPROVVISO, IL LATEX
 matplotlib.rcParams['text.usetex'] = True
-params = {'text.latex.preamble' : [r'\usepackage{amsfonts}', r'\usepackage{amsmath}']}
+params = {'text.latex.preamble' : '\\usepackage{amsfonts}\n\\usepackage{amsmath}\n\\usepackage{amssymb}'}
 plt.rcParams.update(params)
 
-input_file = "data/results-by-fold.csv"
+input_file = "data/20220412-results-by-fold.csv"
 output_folder = "figures/"
 
 if not os.path.exists(output_folder) : os.mkdir(output_folder)
@@ -154,7 +154,7 @@ for i, name in enumerate(M["model_name"]):
         idx_rf.append(i)
     if "LogisticRegressionHT" in name :
         idx_lr.append(i)
-    if "SVCHT" in name :
+    if "MLPClassifierHT" in name :
         idx_svc.append(i)
 
 M_rf = M.iloc[idx_rf]
@@ -171,8 +171,8 @@ M_lr["n_features"].min()
 M_lr["n_features"].max()
 
 dataset_stats = {
-    "SVC": M_svc,
     "LR": M_lr,
+    "MLP": M_svc,
     "RF": M_rf,
 }
 
@@ -263,7 +263,7 @@ selected = [
     'val_f1',
 ]
 
-C = M[ (M["model_name"] == "RandomForestHT") | (M["model_name"] == "LogisticRegressionHT") ].corr()
+C = M[ (M["model_name"] == "RandomForestHT") | (M["model_name"] == "LogisticRegressionHT") | (M["model_name"] == "MLPClassifierHT")].corr()
 #C = M.corr()
 
 C = C.loc[selected][selected]

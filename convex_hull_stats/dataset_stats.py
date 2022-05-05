@@ -148,7 +148,10 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
                      n_splits: int, result_dir: str = "./results"):
 
     # list of datasets in which we have issues
-    datasets_with_issues = ["mnist_784", "Bioresponse"]
+    datasets_with_issues = [
+            #"mnist_784", 
+            "Bioresponse"
+            ]
 
     # create output folder
     os.makedirs(result_dir, exist_ok=True)
@@ -166,23 +169,23 @@ def openml_stats_all(benchmark_suite: OpenMLBenchmarkSuite, classifiers: dict,
 
         # else :
 
-        # get data
-        X, y = task.get_X_and_y()
+            # get data
+            X, y = task.get_X_and_y()
 
-        if np.any(np.isnan(X).flatten()):
-            logging.info("Missing samples in task, calling imputer...")
-            imputer = KNNImputer()
-            X = imputer.fit_transform(X)
+            if np.any(np.isnan(X).flatten()):
+                logging.info("Missing samples in task, calling imputer...")
+                imputer = KNNImputer()
+                X = imputer.fit_transform(X)
 
-        progress_bar.set_description("Analysis of data set: %s" % dataset.name)
-        logging.info("Starting analysis of data set: %s" % dataset.name)
+            progress_bar.set_description("Analysis of data set: %s" % dataset.name)
+            logging.info("Starting analysis of data set: %s" % dataset.name)
 
-        # compute and save stats
-        compute_dataset_stats(X, y, classifiers, result_dir, n_splits,
-                              task_id=task_id, dataset_name=dataset.name,
-                              parallel_folds=parallel_folds)
+            # compute and save stats
+            compute_dataset_stats(X, y, classifiers, result_dir, n_splits,
+                                  task_id=task_id, dataset_name=dataset.name,
+                                  parallel_folds=parallel_folds)
 
-        logging.info("Finished analysis of data set: %s" % dataset.name)
-        parallel_folds = True
+            logging.info("Finished analysis of data set: %s" % dataset.name)
+            parallel_folds = True
 
     return
